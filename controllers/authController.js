@@ -3,22 +3,30 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
-const signToken = (user) =>
-  jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: "12h",
-  });
+const generateToken = (user) =>
+  jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+const getCookieOptions = () => {
+  const isProd = process.env.NODE_ENV === "production";
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  };
+};
 
 const publicUser = (user) => ({
   id: user._id,
-  username: user.username,
   fullName: user.fullName,
-  role: user.role,
   email: user.email || null,
   phone: user.phone || null,
+  isAdmin: user.isAdmin,
+  role: user.role,
 });
 
-// @desc    Authenticate any user (customer, waiter, kitchen, accountant, admin...)
-//          by username, email, or phone — one login page for everyone
+// @desc    Authenticate any user (customer, kitchen, waiter, accountant, admin)
+//          by email or phone — cookie-based session, like MarinePanel
 // @route   POST /api/auth/login
 // @access  Public
 export const login = async (req, res) => {
@@ -26,13 +34,13 @@ export const login = async (req, res) => {
     const { identifier, password } = req.body;
 
     if (!identifier || !password) {
-      return res.status(400).json({ message: "Enter your login and password" });
+      return res.status(400).json({ message: "Enter your email/phone and password" });
     }
 
-    const value = identifier.toLowerCase().trim();
+    const value = identifier.trim().toLowerCase();
 
     const user = await User.findOne({
-      $or: [{ username: value }, { email: value }, { phone: identifier.trim() }],
+      $or: [{ email: value }, { phone: identifier.trim() }],
     });
 
     if (!user || !user.isActive) {
@@ -44,22 +52,40 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    res.json({ token: signToken(user), user: publicUser(user) });
+    const token = generateToken(user);
+    res.cookie("token", token, getCookieOptions());
+
+    res.json({ user: publicUser(user) });
   } catch (error) {
     console.error("Login error:", error.message);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-// @desc    Check if a username or a contact (email/phone) is already taken —
-//          used for live validation while the person is typing
+// @desc    Clear the session cookie
+// @route   POST /api/auth/logout
+// @access  Public
+export const logout = async (req, res) => {
+  res.clearCookie("token", getCookieOptions());
+  res.json({ message: "Logged out" });
+};
+
+// @desc    Return the logged-in user — frontend calls this on load since the
+//          token lives in an httpOnly cookie and can't be read by JS directly
+// @route   GET /api/auth/me
+// @access  Protected
+export const getMe = async (req, res) => {
+  res.json({ user: publicUser(req.user) });
+};
+
+// @desc    Check if an email/phone is already taken — used for live signup validation
 // @route   GET /api/auth/check-availability?field=email&value=jane@mail.com
 // @access  Public
 export const checkAvailability = async (req, res) => {
   try {
     const { field, value } = req.query;
 
-    if (!field || !value || !["username", "email", "phone"].includes(field)) {
+    if (!field || !value || !["email", "phone"].includes(field)) {
       return res.status(400).json({ message: "Invalid check request" });
     }
 
@@ -73,14 +99,14 @@ export const checkAvailability = async (req, res) => {
   }
 };
 
-// @desc    Self-registration for customers (phone OR email + username + password)
+// @desc    Self-registration for customers (fullName + email OR phone + password)
 // @route   POST /api/auth/register-customer
 // @access  Public
 export const registerCustomer = async (req, res) => {
   try {
-    const { method, contact, username, password } = req.body;
+    const { fullName, method, contact, password } = req.body;
 
-    if (!method || !contact || !username || !password) {
+    if (!fullName || !method || !contact || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
     if (!["email", "phone"].includes(method)) {
@@ -90,14 +116,7 @@ export const registerCustomer = async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 6 characters" });
     }
 
-    const cleanUsername = username.toLowerCase().trim();
     const cleanContact = method === "email" ? contact.toLowerCase().trim() : contact.trim();
-
-    // Check username and contact separately so the error is specific
-    const usernameTaken = await User.findOne({ username: cleanUsername });
-    if (usernameTaken) {
-      return res.status(400).json({ message: "That username is already taken" });
-    }
 
     const contactTaken = await User.findOne({ [method]: cleanContact });
     if (contactTaken) {
@@ -109,45 +128,57 @@ export const registerCustomer = async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
 
     const user = await User.create({
-      username: cleanUsername,
+      fullName: fullName.trim(),
       password: hashed,
-      fullName: cleanUsername, // no separate full-name field collected at signup
+      isAdmin: false,
       role: "customer",
       [method]: cleanContact,
     });
 
-    res.status(201).json({ token: signToken(user), user: publicUser(user) });
+    const token = generateToken(user);
+    res.cookie("token", token, getCookieOptions());
+
+    res.status(201).json({ user: publicUser(user) });
   } catch (error) {
     console.error("Register customer error:", error.message);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-// @desc    Create a new staff user (admin/manager only)
+// @desc    Create a new staff user — admin only
+//          { fullName, method, contact, password, isAdmin, role }
+//          role is one of "kitchen" | "waiter" | "accountant", ignored when isAdmin is true
 // @route   POST /api/auth/register
-// @access  Protected — admin, manager
+// @access  Protected — admin
 export const createUser = async (req, res) => {
   try {
-    const { username, password, fullName, role, email, phone } = req.body;
+    const { fullName, method, contact, password, isAdmin, role } = req.body;
 
-    if (!username || !password || !fullName || !role) {
+    if (!fullName || !method || !contact || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
+    if (!["email", "phone"].includes(method)) {
+      return res.status(400).json({ message: "Choose email or phone" });
+    }
+    if (!isAdmin && !["kitchen", "waiter", "accountant"].includes(role)) {
+      return res.status(400).json({ message: "Choose a role: kitchen, waiter, or accountant" });
+    }
 
-    const existing = await User.findOne({ username: username.toLowerCase().trim() });
+    const cleanContact = method === "email" ? contact.toLowerCase().trim() : contact.trim();
+
+    const existing = await User.findOne({ [method]: cleanContact });
     if (existing) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({ message: "A user with that email/phone already exists" });
     }
 
     const hashed = await bcrypt.hash(password, 10);
 
     const user = await User.create({
-      username: username.toLowerCase().trim(),
+      fullName: fullName.trim(),
       password: hashed,
-      fullName,
-      role,
-      email: email?.toLowerCase().trim() || undefined,
-      phone: phone?.trim() || undefined,
+      isAdmin: !!isAdmin,
+      role: isAdmin ? "customer" : role, // role is ignored on the frontend when isAdmin is true
+      [method]: cleanContact,
     });
 
     res.status(201).json({
