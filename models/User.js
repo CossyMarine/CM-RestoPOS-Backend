@@ -3,12 +3,10 @@ import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
   {
-    username: {
+    fullName: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
-      lowercase: true,
     },
     email: {
       type: String,
@@ -24,12 +22,21 @@ const userSchema = new mongoose.Schema(
       sparse: true, // allows many docs with no phone
     },
     password: { type: String, required: true }, // bcrypt hash
-    fullName: { type: String, required: true },
+
+    // Marine-style flag — true = full-access staff (was admin/manager/cashier).
+    // isAdmin: true always routes to /admin regardless of `role`.
+    isAdmin: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Only meaningful when isAdmin is false.
     role: {
       type: String,
-      enum: ["admin", "manager", "cashier", "waiter", "kitchen", "accountant", "customer"],
-      required: true,
+      enum: ["kitchen", "waiter", "accountant", "customer"],
+      default: "customer",
     },
+
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
