@@ -4,7 +4,7 @@ import Order from "../models/Order.js";
 
 // @desc    Mark a receipt as paid
 // @route   PATCH /api/receipts/:id/pay
-// @access  Protected — admin, manager, cashier
+// @access  Protected — admin
 export const payReceipt = async (req, res) => {
   const { id } = req.params;
   const { paymentMethod, amountPaid } = req.body;
@@ -42,7 +42,7 @@ export const payReceipt = async (req, res) => {
 
 // @desc    Get all unpaid receipts
 // @route   GET /api/receipts
-// @access  Protected — cashier, manager, admin
+// @access  Protected — admin
 export const getReceipts = async (req, res) => {
   try {
     const receipts = await Receipt.find({ status: "unpaid" }).sort({ createdAt: -1 });
@@ -50,6 +50,19 @@ export const getReceipts = async (req, res) => {
   } catch (error) {
     console.error("Error fetching receipts:", error.message);
     res.status(500).json({ message: "Failed to fetch receipts" });
+  }
+};
+
+// @desc    Get paid receipts (most recent first) — accountant view
+// @route   GET /api/receipts/paid
+// @access  Protected — admin, accountant
+export const getPaidReceipts = async (req, res) => {
+  try {
+    const receipts = await Receipt.find({ status: "paid" }).sort({ paidAt: -1 }).limit(200);
+    res.json(receipts);
+  } catch (error) {
+    console.error("Error fetching paid receipts:", error.message);
+    res.status(500).json({ message: "Failed to fetch paid receipts" });
   }
 };
 
