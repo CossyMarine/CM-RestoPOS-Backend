@@ -9,8 +9,8 @@ import { protect, authorize } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-router.post("/", protect, authorize("cashier", "manager", "admin"), createVoidRequest);
-router.patch("/:id/approve", protect, authorize("manager", "admin"), approveVoidRequest);
-router.patch("/:id/reject", protect, authorize("manager", "admin"), rejectVoidRequest);
+router.post("/", protect, authorize("admin"), createVoidRequest);
+router.patch("/:id/approve", protect, authorize("admin"), approveVoidRequest);
+router.patch("/:id/reject", protect, authorize("admin"), rejectVoidRequest);
 
 export default router;
