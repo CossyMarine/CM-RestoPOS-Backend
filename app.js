@@ -2,6 +2,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
@@ -21,10 +22,11 @@ const app = express();
 
 app.set("trust proxy", 1);
 
-/* CORS */
+/* CORS — credentials:true is required so the httpOnly auth cookie is sent */
 const ALLOWED_ORIGINS = [
   "https://restopos-pi.vercel.app",
   "http://localhost:3000", // local dev
+  "http://localhost:5173", // vite dev
 ];
 
 app.use(
@@ -36,6 +38,9 @@ app.use(
 
 /* Body parser */
 app.use(express.json());
+
+/* Cookie parser — required to read the httpOnly auth cookie */
+app.use(cookieParser());
 
 /* Health check */
 app.get("/", (req, res) => {
