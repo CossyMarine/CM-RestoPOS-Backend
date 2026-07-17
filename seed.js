@@ -12,13 +12,13 @@ const seed = async () => {
   const hashed = await bcrypt.hash("admin123", 10);
 
   await User.create({
-    username: "admin",
-    password: hashed,
     fullName: "System Admin",
-    role: "admin",
+    email: "admin@restopos.com",
+    password: hashed,
+    isAdmin: true,
   });
 
-  console.log("✅ Admin created successfully");
+  console.log("✅ Admin created successfully (admin@restopos.com / admin123)");
   process.exit(0);
 };
 
