@@ -23,7 +23,7 @@ app.set("trust proxy", 1);
 
 /* CORS */
 const ALLOWED_ORIGINS = [
-  "https://resto-pos-frontend.vercel.app",
+  "https://restopos-pi.vercel.app",
   "http://localhost:3000", // local dev
 ];
 
