@@ -1,6 +1,6 @@
 // controllers/menuController.js
 import MenuItem from "../models/MenuItem.js";
-import { cloudinary } from "../config/cloudinary.js";
+import { cloudinary } from "../Config/cloudinary.js";
 
 // @desc    Get all available menu items
 // @route   GET /api/menu
