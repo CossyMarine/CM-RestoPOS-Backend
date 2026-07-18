@@ -14,12 +14,21 @@ export const createCustomerOrder = async (req, res) => {
   if (!items || items.length === 0) return res.status(400).json({ message: "Cart is empty" });
 
   try {
-    const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+    // Compute lineTotal server-side so the Order model's required field is always
+    // satisfied, regardless of what the client sends.
+    const itemsWithTotals = items.map((i) => ({
+      mealName: i.mealName,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      lineTotal: i.quantity * i.unitPrice,
+    }));
+
+    const subtotal = itemsWithTotals.reduce((sum, i) => sum + i.lineTotal, 0);
 
     const order = await Order.create({
       tableNumber,
       waiterName: null,
-      items,
+      items: itemsWithTotals,
       subtotal,
       status: "pending",
       source: "online",
