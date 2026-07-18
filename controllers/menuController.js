@@ -1,5 +1,6 @@
 // controllers/menuController.js
 import MenuItem from "../models/MenuItem.js";
+import { cloudinary } from "../config/cloudinary.js";
 
 // @desc    Get all available menu items
 // @route   GET /api/menu
@@ -17,12 +18,32 @@ export const getMenu = async (req, res) => {
   }
 };
 
+// @desc    Upload a menu item image to Cloudinary (gallery/device upload)
+// @route   POST /api/menu/upload-image
+// @access  Protected — admin, manager, waiter, accountant
+export const uploadMenuImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No image uploaded" });
+    }
+
+    res.json({
+      message:  "Image uploaded",
+      url:      req.file.path,      // Cloudinary secure URL
+      publicId: req.file.filename,  // Cloudinary public_id (for later deletion)
+    });
+  } catch (error) {
+    console.error("Error uploading menu image:", error.message);
+    res.status(500).json({ message: "Image upload failed" });
+  }
+};
+
 // @desc    Create a menu item
 // @route   POST /api/menu
 // @access  Protected — admin, manager, waiter, accountant
 export const createMenuItem = async (req, res) => {
   try {
-    const { name, description, price, category, imageUrl } = req.body;
+    const { name, description, price, category, imageUrl, imagePublicId } = req.body;
 
     if (!name || !price) {
       return res.status(400).json({ message: "Name and price are required" });
@@ -30,10 +51,11 @@ export const createMenuItem = async (req, res) => {
 
     const item = await MenuItem.create({
       name,
-      description: description || "",
+      description:   description || "",
       price,
-      category: category || "main",
-      imageUrl: imageUrl || null,
+      category:       category || "main",
+      imageUrl:       imageUrl || null,
+      imagePublicId:  imagePublicId || null,
     });
 
     res.status(201).json(item);
@@ -49,20 +71,38 @@ export const createMenuItem = async (req, res) => {
 export const updateMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const allowed = ["name", "description", "price", "category", "imageUrl", "isAvailable"];
+    const allowed = [
+      "name",
+      "description",
+      "price",
+      "category",
+      "imageUrl",
+      "imagePublicId",
+      "isAvailable",
+    ];
     const updates = {};
     allowed.forEach((key) => {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     });
 
+    const existing = await MenuItem.findById(id);
+    if (!existing) {
+      return res.status(404).json({ message: "Menu item not found" });
+    }
+
+    // If the image is being replaced, delete the old Cloudinary asset
+    if (
+      updates.imagePublicId !== undefined &&
+      existing.imagePublicId &&
+      existing.imagePublicId !== updates.imagePublicId
+    ) {
+      await cloudinary.uploader.destroy(existing.imagePublicId).catch(() => {});
+    }
+
     const item = await MenuItem.findByIdAndUpdate(id, updates, {
       new: true,
       runValidators: true,
     });
-
-    if (!item) {
-      return res.status(404).json({ message: "Menu item not found" });
-    }
 
     res.json(item);
   } catch (error) {
@@ -81,6 +121,10 @@ export const deleteMenuItem = async (req, res) => {
 
     if (!item) {
       return res.status(404).json({ message: "Menu item not found" });
+    }
+
+    if (item.imagePublicId) {
+      await cloudinary.uploader.destroy(item.imagePublicId).catch(() => {});
     }
 
     res.json({ message: "Menu item deleted" });
