@@ -3,8 +3,15 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
-const generateToken = (user) =>
-  jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+// ======================= HELPERS =======================
+
+const generateToken = (user) => {
+  return jwt.sign(
+    { id: user._id, isAdmin: user.isAdmin, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+};
 
 const getCookieOptions = () => {
   const isProd = process.env.NODE_ENV === "production";
@@ -25,25 +32,37 @@ const publicUser = (user) => ({
   role: user.role,
 });
 
+// ======================= LOGIN =======================
 // @desc    Authenticate any user (customer, kitchen, waiter, accountant, admin)
-//          by email or phone — cookie-based session, like MarinePanel
+//          by email or phone — cookie-based session, same flow as MarinePanel:
+//          find -> compare password -> check account status -> sign -> cookie.
 // @route   POST /api/auth/login
 // @access  Public
 export const login = async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    let { identifier, password } = req.body;
 
     if (!identifier || !password) {
       return res.status(400).json({ message: "Enter your email/phone and password" });
     }
 
-    const value = identifier.trim().toLowerCase();
+    identifier = identifier.trim();
+    const value = identifier.toLowerCase();
 
+    /*
+    DB FETCH
+    One findOne against email OR phone. We don't reveal which field
+    matched, or whether the account exists at all — same generic
+    "Invalid credentials" whether the user isn't found or the
+    password is wrong. Account-status problems (deactivated) are
+    only reported once the password has already checked out, so we
+    never leak account status to someone who doesn't have the password.
+    */
     const user = await User.findOne({
-      $or: [{ email: value }, { phone: identifier.trim() }],
+      $or: [{ email: value }, { phone: identifier }],
     });
 
-    if (!user || !user.isActive) {
+    if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
@@ -52,12 +71,20 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({
+        message: "Your account has been deactivated. Contact your admin.",
+      });
+    }
+
     const token = generateToken(user);
     res.cookie("token", token, getCookieOptions());
 
+    // SEND BACK TO USER: httpOnly cookie carries the session; body only
+    // carries the non-sensitive profile fields the frontend needs to render.
     res.json({ user: publicUser(user) });
   } catch (error) {
-    console.error("Login error:", error.message);
+    console.error("LOGIN ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -94,17 +121,18 @@ export const checkAvailability = async (req, res) => {
 
     res.json({ available: !existing });
   } catch (error) {
-    console.error("Check availability error:", error.message);
+    console.error("CHECK AVAILABILITY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+// ======================= REGISTER (customer self-signup) =======================
 // @desc    Self-registration for customers (fullName + email OR phone + password)
 // @route   POST /api/auth/register-customer
 // @access  Public
 export const registerCustomer = async (req, res) => {
   try {
-    const { fullName, method, contact, password } = req.body;
+    let { fullName, method, contact, password } = req.body;
 
     if (!fullName || !method || !contact || !password) {
       return res.status(400).json({ message: "All fields are required" });
@@ -116,8 +144,15 @@ export const registerCustomer = async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 6 characters" });
     }
 
+    fullName = fullName.trim();
     const cleanContact = method === "email" ? contact.toLowerCase().trim() : contact.trim();
 
+    /*
+    DB FETCH — existence check
+    Same email/phone can't be reused across accounts (unique+sparse
+    at the schema level too), so we check first to return a friendly
+    message instead of letting a duplicate-key error hit the catch block.
+    */
     const contactTaken = await User.findOne({ [method]: cleanContact });
     if (contactTaken) {
       return res.status(400).json({
@@ -125,11 +160,17 @@ export const registerCustomer = async (req, res) => {
       });
     }
 
-    const hashed = await bcrypt.hash(password, 10);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
+    /*
+    DB WRITE
+    Every self-signup is a plain customer — isAdmin/role for staff
+    accounts are only ever set through createUser below, by an admin.
+    */
     const user = await User.create({
-      fullName: fullName.trim(),
-      password: hashed,
+      fullName,
+      password: hashedPassword,
       isAdmin: false,
       role: "customer",
       [method]: cleanContact,
@@ -138,13 +179,16 @@ export const registerCustomer = async (req, res) => {
     const token = generateToken(user);
     res.cookie("token", token, getCookieOptions());
 
+    // SEND BACK TO USER: 201 + the same shape login/getMe return, so the
+    // frontend can treat "just registered" and "just logged in" identically.
     res.status(201).json({ user: publicUser(user) });
   } catch (error) {
-    console.error("Register customer error:", error.message);
+    console.error("REGISTER CUSTOMER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+// ======================= REGISTER (staff, admin-only) =======================
 // @desc    Create a new staff user — admin only
 //          { fullName, method, contact, password, isAdmin, role }
 //          role is one of "kitchen" | "waiter" | "accountant", ignored when isAdmin is true
@@ -152,7 +196,7 @@ export const registerCustomer = async (req, res) => {
 // @access  Protected — admin
 export const createUser = async (req, res) => {
   try {
-    const { fullName, method, contact, password, isAdmin, role } = req.body;
+    let { fullName, method, contact, password, isAdmin, role } = req.body;
 
     if (!fullName || !method || !contact || !password) {
       return res.status(400).json({ message: "All fields are required" });
@@ -164,6 +208,7 @@ export const createUser = async (req, res) => {
       return res.status(400).json({ message: "Choose a role: kitchen, waiter, or accountant" });
     }
 
+    fullName = fullName.trim();
     const cleanContact = method === "email" ? contact.toLowerCase().trim() : contact.trim();
 
     const existing = await User.findOne({ [method]: cleanContact });
@@ -171,22 +216,25 @@ export const createUser = async (req, res) => {
       return res.status(400).json({ message: "A user with that email/phone already exists" });
     }
 
-    const hashed = await bcrypt.hash(password, 10);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({
-      fullName: fullName.trim(),
-      password: hashed,
+      fullName,
+      password: hashedPassword,
       isAdmin: !!isAdmin,
       role: isAdmin ? "customer" : role, // role is ignored on the frontend when isAdmin is true
       [method]: cleanContact,
     });
 
+    // No cookie set here — this is an admin creating someone else's
+    // account, not authenticating the new user's own session.
     res.status(201).json({
       message: "User created successfully",
       user: publicUser(user),
     });
   } catch (error) {
-    console.error("Create user error:", error.message);
+    console.error("CREATE USER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -202,7 +250,7 @@ export const getWaiters = async (req, res) => {
 
     res.json(waiters.map((w) => ({ id: w._id, fullName: w.fullName })));
   } catch (error) {
-    console.error("Failed to fetch waiters:", error.message);
+    console.error("GET WAITERS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch waiters" });
   }
 };
