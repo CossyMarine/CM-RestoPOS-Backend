@@ -42,3 +42,50 @@ export const createMenuItem = async (req, res) => {
     res.status(500).json({ message: "Failed to create menu item" });
   }
 };
+
+// @desc    Update a menu item
+// @route   PUT /api/menu/:id
+// @access  Protected — admin, manager, waiter, accountant
+export const updateMenuItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowed = ["name", "description", "price", "category", "imageUrl", "isAvailable"];
+    const updates = {};
+    allowed.forEach((key) => {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    });
+
+    const item = await MenuItem.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!item) {
+      return res.status(404).json({ message: "Menu item not found" });
+    }
+
+    res.json(item);
+  } catch (error) {
+    console.error("Error updating menu item:", error.message);
+    res.status(500).json({ message: "Failed to update menu item" });
+  }
+};
+
+// @desc    Delete a menu item
+// @route   DELETE /api/menu/:id
+// @access  Protected — admin, manager, waiter, accountant
+export const deleteMenuItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const item = await MenuItem.findByIdAndDelete(id);
+
+    if (!item) {
+      return res.status(404).json({ message: "Menu item not found" });
+    }
+
+    res.json({ message: "Menu item deleted" });
+  } catch (error) {
+    console.error("Error deleting menu item:", error.message);
+    res.status(500).json({ message: "Failed to delete menu item" });
+  }
+};
