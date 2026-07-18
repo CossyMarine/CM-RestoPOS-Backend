@@ -8,7 +8,7 @@ import {
   uploadMenuImage,
 } from "../controllers/menuController.js";
 import { protect, authorize } from "../Middlewares/authMiddleware.js";
-import { uploadMenuImage as uploadMenuImageMiddleware } from "../config/cloudinary.js";
+import { uploadMenuImage as uploadMenuImageMiddleware } from "../Config/cloudinary.js";
 
 const router = express.Router();
 
