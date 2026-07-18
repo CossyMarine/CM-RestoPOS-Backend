@@ -32,6 +32,18 @@ const publicUser = (user) => ({
   role: user.role,
 });
 
+// Fuller shape for the admin Users panel — includes status + join date
+const adminUserView = (user) => ({
+  id: user._id,
+  fullName: user.fullName,
+  email: user.email || null,
+  phone: user.phone || null,
+  isAdmin: user.isAdmin,
+  role: user.role,
+  isActive: user.isActive,
+  createdAt: user.createdAt,
+});
+
 // ======================= LOGIN =======================
 // @desc    Authenticate any user (customer, kitchen, waiter, accountant, admin)
 //          by email or phone — cookie-based session, same flow as MarinePanel:
@@ -49,15 +61,6 @@ export const login = async (req, res) => {
     identifier = identifier.trim();
     const value = identifier.toLowerCase();
 
-    /*
-    DB FETCH
-    One findOne against email OR phone. We don't reveal which field
-    matched, or whether the account exists at all — same generic
-    "Invalid credentials" whether the user isn't found or the
-    password is wrong. Account-status problems (deactivated) are
-    only reported once the password has already checked out, so we
-    never leak account status to someone who doesn't have the password.
-    */
     const user = await User.findOne({
       $or: [{ email: value }, { phone: identifier }],
     });
@@ -80,8 +83,6 @@ export const login = async (req, res) => {
     const token = generateToken(user);
     res.cookie("token", token, getCookieOptions());
 
-    // SEND BACK TO USER: httpOnly cookie carries the session; body only
-    // carries the non-sensitive profile fields the frontend needs to render.
     res.json({ user: publicUser(user) });
   } catch (error) {
     console.error("LOGIN ERROR:", error);
@@ -97,15 +98,14 @@ export const logout = async (req, res) => {
   res.json({ message: "Logged out" });
 };
 
-// @desc    Return the logged-in user — frontend calls this on load since the
-//          token lives in an httpOnly cookie and can't be read by JS directly
+// @desc    Return the logged-in user
 // @route   GET /api/auth/me
 // @access  Protected
 export const getMe = async (req, res) => {
   res.json({ user: publicUser(req.user) });
 };
 
-// @desc    Check if an email/phone is already taken — used for live signup validation
+// @desc    Check if an email/phone is already taken
 // @route   GET /api/auth/check-availability?field=email&value=jane@mail.com
 // @access  Public
 export const checkAvailability = async (req, res) => {
@@ -127,7 +127,6 @@ export const checkAvailability = async (req, res) => {
 };
 
 // ======================= REGISTER (customer self-signup) =======================
-// @desc    Self-registration for customers (fullName + email OR phone + password)
 // @route   POST /api/auth/register-customer
 // @access  Public
 export const registerCustomer = async (req, res) => {
@@ -147,12 +146,6 @@ export const registerCustomer = async (req, res) => {
     fullName = fullName.trim();
     const cleanContact = method === "email" ? contact.toLowerCase().trim() : contact.trim();
 
-    /*
-    DB FETCH — existence check
-    Same email/phone can't be reused across accounts (unique+sparse
-    at the schema level too), so we check first to return a friendly
-    message instead of letting a duplicate-key error hit the catch block.
-    */
     const contactTaken = await User.findOne({ [method]: cleanContact });
     if (contactTaken) {
       return res.status(400).json({
@@ -163,11 +156,6 @@ export const registerCustomer = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    /*
-    DB WRITE
-    Every self-signup is a plain customer — isAdmin/role for staff
-    accounts are only ever set through createUser below, by an admin.
-    */
     const user = await User.create({
       fullName,
       password: hashedPassword,
@@ -179,8 +167,6 @@ export const registerCustomer = async (req, res) => {
     const token = generateToken(user);
     res.cookie("token", token, getCookieOptions());
 
-    // SEND BACK TO USER: 201 + the same shape login/getMe return, so the
-    // frontend can treat "just registered" and "just logged in" identically.
     res.status(201).json({ user: publicUser(user) });
   } catch (error) {
     console.error("REGISTER CUSTOMER ERROR:", error);
@@ -189,9 +175,6 @@ export const registerCustomer = async (req, res) => {
 };
 
 // ======================= REGISTER (staff, admin-only) =======================
-// @desc    Create a new staff user — admin only
-//          { fullName, method, contact, password, isAdmin, role }
-//          role is one of "kitchen" | "waiter" | "accountant", ignored when isAdmin is true
 // @route   POST /api/auth/register
 // @access  Protected — admin
 export const createUser = async (req, res) => {
@@ -223,15 +206,13 @@ export const createUser = async (req, res) => {
       fullName,
       password: hashedPassword,
       isAdmin: !!isAdmin,
-      role: isAdmin ? "customer" : role, // role is ignored on the frontend when isAdmin is true
+      role: isAdmin ? "customer" : role,
       [method]: cleanContact,
     });
 
-    // No cookie set here — this is an admin creating someone else's
-    // account, not authenticating the new user's own session.
     res.status(201).json({
       message: "User created successfully",
-      user: publicUser(user),
+      user: adminUserView(user),
     });
   } catch (error) {
     console.error("CREATE USER ERROR:", error);
@@ -252,5 +233,84 @@ export const getWaiters = async (req, res) => {
   } catch (error) {
     console.error("GET WAITERS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch waiters" });
+  }
+};
+
+// @desc    Get every staff/admin account for the admin Users panel (customers excluded)
+// @route   GET /api/auth/users
+// @access  Protected — admin
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find({
+      $or: [{ isAdmin: true }, { role: { $ne: "customer" } }],
+    }).sort({ createdAt: -1 });
+
+    res.json(users.map(adminUserView));
+  } catch (error) {
+    console.error("GET ALL USERS ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch users" });
+  }
+};
+
+// @desc    Promote/change a user's role.
+//          Body: { isAdmin: true } -> full admin
+//          Body: { role: "kitchen" | "waiter" | "accountant" } -> staff role, isAdmin false
+// @route   PATCH /api/auth/users/:id/role
+// @access  Protected — admin
+export const updateUserRole = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isAdmin, role } = req.body;
+
+    if (req.user._id.toString() === id) {
+      return res.status(400).json({ message: "You can't change your own role" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (isAdmin) {
+      user.isAdmin = true;
+    } else {
+      if (!["kitchen", "waiter", "accountant"].includes(role)) {
+        return res.status(400).json({ message: "Choose a role: kitchen, waiter, or accountant" });
+      }
+      user.isAdmin = false;
+      user.role = role;
+    }
+
+    await user.save();
+    res.json({ message: "Role updated successfully", user: adminUserView(user) });
+  } catch (error) {
+    console.error("UPDATE USER ROLE ERROR:", error);
+    res.status(500).json({ message: "Failed to update role" });
+  }
+};
+
+// @desc    Activate or deactivate a staff/admin account
+// @route   PATCH /api/auth/users/:id/status
+// @access  Protected — admin
+export const toggleUserStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (req.user._id.toString() === id) {
+      return res.status(400).json({ message: "You can't deactivate your own account" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.isActive = !user.isActive;
+    await user.save();
+
+    res.json({ message: "Status updated", user: adminUserView(user) });
+  } catch (error) {
+    console.error("TOGGLE USER STATUS ERROR:", error);
+    res.status(500).json({ message: "Failed to update status" });
   }
 };
