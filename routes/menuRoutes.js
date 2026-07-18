@@ -5,14 +5,27 @@ import {
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
+  uploadMenuImage,
 } from "../controllers/menuController.js";
 import { protect, authorize } from "../Middlewares/authMiddleware.js";
+import { uploadMenuImage as uploadMenuImageMiddleware } from "../config/cloudinary.js";
 
 const router = express.Router();
 
+const staffRoles = authorize("admin", "manager", "waiter", "accountant");
+
 router.get("/", getMenu);
-router.post("/", protect, authorize("admin", "manager", "waiter", "accountant"), createMenuItem);
-router.put("/:id", protect, authorize("admin", "manager", "waiter", "accountant"), updateMenuItem);
-router.delete("/:id", protect, authorize("admin", "manager", "waiter", "accountant"), deleteMenuItem);
+
+router.post(
+  "/upload-image",
+  protect,
+  staffRoles,
+  uploadMenuImageMiddleware.single("image"),
+  uploadMenuImage
+);
+
+router.post("/", protect, staffRoles, createMenuItem);
+router.put("/:id", protect, staffRoles, updateMenuItem);
+router.delete("/:id", protect, staffRoles, deleteMenuItem);
 
 export default router;
