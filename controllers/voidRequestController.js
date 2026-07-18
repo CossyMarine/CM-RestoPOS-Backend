@@ -2,6 +2,23 @@
 import Receipt from "../models/Receipt.js";
 import VoidRequest from "../models/VoidRequest.js";
 
+// @desc    Get all pending void requests, with receipt + requester populated
+// @route   GET /api/void-requests
+// @access  Protected — admin
+export const getVoidRequests = async (req, res) => {
+  try {
+    const voidRequests = await VoidRequest.find({ status: "pending" })
+      .populate("receipt")
+      .populate("requestedBy", "fullName")
+      .sort({ createdAt: -1 });
+
+    res.json(voidRequests);
+  } catch (error) {
+    console.error("Error fetching void requests:", error.message);
+    res.status(500).json({ message: "Failed to fetch void requests", error: error.message });
+  }
+};
+
 // @desc    Request a receipt be voided
 // @route   POST /api/void-requests
 // @access  Protected — cashier, manager, admin
