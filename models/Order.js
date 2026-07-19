@@ -23,8 +23,10 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
     },
     source: { type: String, enum: ["staff", "online"], default: "staff" },
-    guestSessionId: { type: String, default: null },
-    customerName:   { type: String, default: null },
+
+    // Registered customer who placed this order (online orders now require login)
+    customer: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    customerName: { type: String, default: null },
   },
   { timestamps: true }
 );
