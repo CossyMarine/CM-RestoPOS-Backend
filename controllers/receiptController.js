@@ -2,6 +2,7 @@
 import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
 import { stkPush, stkQuery } from "../utils/mpesa.js";
+import { applyPaymentToReceipt } from "../utils/walletPayments.js";
 
 // ============================================================
 // CASH PAYMENT
@@ -59,7 +60,7 @@ export const payReceipt = async (req, res) => {
 // M-PESA (TILL) PAYMENT — STK PUSH
 // ============================================================
 
-// Shared: mark a receipt paid once Daraja confirms success
+// Shared: mark a receipt paid once Daraja confirms success (staff-initiated flow)
 const finalizeMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) => {
   const cashAmount = receipt.pendingCashAmount || 0;
   const tillAmount = receipt.pendingTillAmount || 0;
@@ -83,6 +84,34 @@ const finalizeMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) => {
     checkoutRequestId: receipt.mpesaCheckoutRequestId,
     status: "success",
     receipt,
+  });
+};
+
+// Shared: apply a wallet-initiated STK push once Daraja confirms success —
+// goes through applyPaymentToReceipt so partial payments and cashback work
+const finalizeWalletMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) => {
+  const amount = receipt.pendingTillAmount || 0;
+  const paidBy = receipt.pendingPaidBy;
+
+  receipt.mpesaStatus = "success";
+  receipt.mpesaReceiptNumber = mpesaReceiptNumber || receipt.mpesaReceiptNumber || null;
+  receipt.mpesaResultDesc = "Payment received successfully";
+  receipt.pendingTillAmount = 0;
+  receipt.pendingCashAmount = 0;
+
+  const updated = await applyPaymentToReceipt({
+    receipt,
+    amount,
+    method: "mpesa_stk",
+    reference: receipt.mpesaReceiptNumber,
+    paidBy,
+    io,
+  });
+
+  io.emit("mpesa:result", {
+    checkoutRequestId: updated.mpesaCheckoutRequestId,
+    status: "success",
+    receipt: updated,
   });
 };
 
@@ -141,6 +170,7 @@ export const initiateMpesaPayment = async (req, res) => {
       });
     }
 
+    receipt.mpesaSource = "staff";
     receipt.mpesaPhone = phone;
     receipt.mpesaCheckoutRequestId = stkRes.CheckoutRequestID;
     receipt.mpesaMerchantRequestId = stkRes.MerchantRequestID;
@@ -182,7 +212,7 @@ export const mpesaCallback = async (req, res) => {
     const { CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = callback;
 
     const receipt = await Receipt.findOne({ mpesaCheckoutRequestId: CheckoutRequestID });
-    if (!receipt || receipt.status !== "unpaid") {
+    if (!receipt || !["unpaid", "partial"].includes(receipt.status)) {
       return res.status(200).json({ message: "Receipt not found or already settled" });
     }
 
@@ -191,11 +221,13 @@ export const mpesaCallback = async (req, res) => {
     if (Number(ResultCode) === 0) {
       const items = CallbackMetadata?.Item || [];
       const receiptNumberItem = items.find((i) => i.Name === "MpesaReceiptNumber");
-      await finalizeMpesaSuccess({
-        receipt,
-        mpesaReceiptNumber: receiptNumberItem?.Value || null,
-        io,
-      });
+      const mpesaReceiptNumber = receiptNumberItem?.Value || null;
+
+      if (receipt.mpesaSource === "wallet") {
+        await finalizeWalletMpesaSuccess({ receipt, mpesaReceiptNumber, io });
+      } else {
+        await finalizeMpesaSuccess({ receipt, mpesaReceiptNumber, io });
+      }
     } else {
       await finalizeMpesaFailure({ receipt, resultDesc: ResultDesc, io });
     }
@@ -232,7 +264,11 @@ export const getMpesaStatus = async (req, res) => {
       const resultCode = Number(queryRes.ResultCode);
 
       if (resultCode === 0) {
-        await finalizeMpesaSuccess({ receipt, mpesaReceiptNumber: null, io });
+        if (receipt.mpesaSource === "wallet") {
+          await finalizeWalletMpesaSuccess({ receipt, mpesaReceiptNumber: null, io });
+        } else {
+          await finalizeMpesaSuccess({ receipt, mpesaReceiptNumber: null, io });
+        }
         return res.json({ status: "success", receipt });
       }
       if (!isNaN(resultCode)) {
