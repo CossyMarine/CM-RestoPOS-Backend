@@ -1,0 +1,44 @@
+// models/AdminSettings.js
+import mongoose from "mongoose";
+
+const rewardSettingsSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    // % of amount paid that converts into reward value, e.g. 5 = 5% cashback
+    cashbackPercent: { type: Number, default: 0 },
+    // KES value of 1 point when redeeming, e.g. 1 (1 point = 1 KES) or 100 (1 point = 100 KES)
+    pointValueKes: { type: Number, default: 1 },
+    // Minimum points balance a customer must reach before they can redeem
+    targetPoints: { type: Number, default: 0 },
+    description: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
+const adminSettingsSchema = new mongoose.Schema(
+  {
+    // Singleton lock — only one document ever exists
+    key: { type: String, default: "global", unique: true },
+
+    // Manual till shown to customers who pay via "Till" instead of STK
+    tillNumber: { type: String, default: null },
+    tillName: { type: String, default: null },
+
+    // Bouncing WhatsApp icon on the customer home page
+    whatsappNumber: { type: String, default: null },
+    // "Call to manage" number shown on the profile page
+    callNumber: { type: String, default: null },
+
+    reward: { type: rewardSettingsSchema, default: () => ({}) },
+  },
+  { timestamps: true }
+);
+
+// Fetch the single settings document, creating it with defaults on first use.
+adminSettingsSchema.statics.getSettings = async function () {
+  let settings = await this.findOne({ key: "global" });
+  if (!settings) settings = await this.create({ key: "global" });
+  return settings;
+};
+
+export default mongoose.model("AdminSettings", adminSettingsSchema);
