@@ -39,3 +39,33 @@ export const getTodayRevenue = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch revenue data", error: error.message });
   }
 };
+
+// @desc    Get all-time total revenue and total receipt count — Dashboard Overview cards
+// @route   GET /api/revenue/summary
+// @access  Protected — admin
+export const getRevenueSummary = async (req, res) => {
+  try {
+    const result = await Receipt.aggregate([
+      { $match: { status: "paid" } },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$subtotal" },
+          totalPaidReceipts: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const totalReceipts = await Receipt.countDocuments({});
+    const data = result[0] || { totalRevenue: 0, totalPaidReceipts: 0 };
+
+    res.json({
+      totalRevenue: data.totalRevenue,
+      totalPaidReceipts: data.totalPaidReceipts,
+      totalReceipts,
+    });
+  } catch (error) {
+    console.error("Error fetching revenue summary:", error.message);
+    res.status(500).json({ message: "Failed to fetch revenue summary", error: error.message });
+  }
+};
