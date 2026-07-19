@@ -97,18 +97,22 @@ export const getReceiptById = async (req, res) => {
 };
 
 // @desc    Paginated bill history for one waiter, every status, newest first
-// @route   GET /api/receipts/waiter/:name/history?page=1&limit=4&q=search
+// @desc    Paginated bill history across ALL waiters, every status, newest first
+//         (used by the Bill Records tab when no waiter is selected)
+// @route   GET /api/receipts/history?page=1&limit=4&q=search
 // @access  Protected
-export const getReceiptHistoryByWaiter = async (req, res) => {
+export const getReceiptHistory = async (req, res) => {
   try {
-    const { name } = req.params;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, parseInt(req.query.limit) || 4);
     const q = (req.query.q || "").trim();
 
-    const filter = { waiterName: name };
+    const filter = {};
     if (q) {
-      const orClauses = [{ billId: { $regex: q, $options: "i" } }];
+      const orClauses = [
+        { billId: { $regex: q, $options: "i" } },
+        { waiterName: { $regex: q, $options: "i" } },
+      ];
       orClauses.push(
         isNaN(q) ? { tableNumber: { $regex: q, $options: "i" } } : { tableNumber: q }
       );
