@@ -3,14 +3,13 @@ import Order from "../models/Order.js";
 import Receipt from "../models/Receipt.js";
 import { generateReceiptForOrder } from "../utils/generateReceipt.js";
 
-// @desc    Place an order — public, no login, guest session
+// @desc    Place an order — customer must be logged in (registered account)
 // @route   POST /api/orders/customer
-// @access  Public
+// @access  Protected — customer
 export const createCustomerOrder = async (req, res) => {
-  const { tableNumber, items, guestSessionId, customerName } = req.body;
+  const { tableNumber, items } = req.body;
 
   if (!tableNumber) return res.status(400).json({ message: "Table number is required" });
-  if (!guestSessionId) return res.status(400).json({ message: "Missing guest session" });
   if (!items || items.length === 0) return res.status(400).json({ message: "Cart is empty" });
 
   try {
@@ -32,11 +31,11 @@ export const createCustomerOrder = async (req, res) => {
       subtotal,
       status: "pending",
       source: "online",
-      guestSessionId,
-      customerName: customerName || null,
+      customer: req.user._id,
+      customerName: req.user.fullName,
     });
 
-    const receipt = await generateReceiptForOrder(order);
+    const receipt = await generateReceiptForOrder(order, { customer: req.user._id });
 
     const io = req.app.get("io");
     io.emit("order:created", { order, receipt, source: "online" });
@@ -48,42 +47,60 @@ export const createCustomerOrder = async (req, res) => {
   }
 };
 
-// @desc    Get a guest's own orders, with their bill ID attached
-// @route   GET /api/orders/customer?sessionId=xxx
-// @access  Public
+// @desc    Get the logged-in customer's own order history, with bill ID and
+//          payment status attached, newest first
+// @route   GET /api/orders/customer?page=1&limit=20
+// @access  Protected — customer
 export const getCustomerOrders = async (req, res) => {
-  const { sessionId } = req.query;
-  if (!sessionId) return res.status(400).json({ message: "sessionId is required" });
-
   try {
-    const orders = await Order.find({ guestSessionId: sessionId })
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 20);
+
+    const total = await Order.countDocuments({ customer: req.user._id });
+    const orders = await Order.find({ customer: req.user._id })
       .sort({ createdAt: -1 })
-      .limit(20)
+      .skip((page - 1) * limit)
+      .limit(limit)
       .lean();
 
     const orderIds = orders.map((o) => o._id);
-    const receipts = await Receipt.find({ order: { $in: orderIds } }).select("order billId").lean();
-    const billIdByOrder = Object.fromEntries(receipts.map((r) => [String(r.order), r.billId]));
+    const receipts = await Receipt.find({ order: { $in: orderIds } })
+      .select("order billId status amountPaid subtotal")
+      .lean();
+    const receiptByOrder = Object.fromEntries(receipts.map((r) => [String(r.order), r]));
 
-    res.json(orders.map((o) => ({ ...o, billId: billIdByOrder[String(o._id)] || null })));
+    res.json({
+      orders: orders.map((o) => {
+        const receipt = receiptByOrder[String(o._id)] || null;
+        return {
+          ...o,
+          billId: receipt?.billId || null,
+          billStatus: receipt?.status || null,
+          amountPaid: receipt?.amountPaid || 0,
+        };
+      }),
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
   } catch (error) {
     console.error("Error fetching customer orders:", error.message);
     res.status(500).json({ message: "Failed to fetch orders" });
   }
 };
 
-// @desc    Cancel a guest's own pending order
+// @desc    Cancel the logged-in customer's own pending order
 // @route   PATCH /api/orders/customer/:id/cancel
-// @access  Public — guarded by guest session match
+// @access  Protected — customer
 export const cancelCustomerOrder = async (req, res) => {
   const { id } = req.params;
-  const { sessionId } = req.body;
 
   try {
     const order = await Order.findById(id);
 
     if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.guestSessionId !== sessionId) {
+    if (String(order.customer) !== String(req.user._id)) {
       return res.status(403).json({ message: "Not authorized to cancel this order" });
     }
     if (order.status !== "pending") {
