@@ -96,7 +96,6 @@ export const getReceiptById = async (req, res) => {
   }
 };
 
-// @desc    Paginated bill history for one waiter, every status, newest first
 // @desc    Paginated bill history across ALL waiters, every status, newest first
 //         (used by the Bill Records tab when no waiter is selected)
 // @route   GET /api/receipts/history?page=1&limit=4&q=search
@@ -113,6 +112,44 @@ export const getReceiptHistory = async (req, res) => {
         { billId: { $regex: q, $options: "i" } },
         { waiterName: { $regex: q, $options: "i" } },
       ];
+      orClauses.push(
+        isNaN(q) ? { tableNumber: { $regex: q, $options: "i" } } : { tableNumber: q }
+      );
+      filter.$or = orClauses;
+    }
+
+    const total = await Receipt.countDocuments(filter);
+    const receipts = await Receipt.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    res.json({
+      receipts,
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  } catch (error) {
+    console.error("Error fetching bill history:", error.message);
+    res.status(500).json({ message: "Failed to fetch bill history" });
+  }
+};
+
+// @desc    Paginated bill history for one waiter, every status, newest first
+// @route   GET /api/receipts/waiter/:name/history?page=1&limit=4&q=search
+// @access  Protected
+export const getReceiptHistoryByWaiter = async (req, res) => {
+  try {
+    const { name } = req.params;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 4);
+    const q = (req.query.q || "").trim();
+
+    const filter = { waiterName: name };
+    if (q) {
+      const orClauses = [{ billId: { $regex: q, $options: "i" } }];
       orClauses.push(
         isNaN(q) ? { tableNumber: { $regex: q, $options: "i" } } : { tableNumber: q }
       );
