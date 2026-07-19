@@ -21,8 +21,9 @@ router.get("/pending", protect, getPendingOrders);
 router.patch("/:id/status", protect, authorize("kitchen", "manager", "admin"), updateOrderStatus);
 router.patch("/:id/assign", protect, authorize("waiter", "manager", "admin"), assignOrderWaiter);
 
-router.post("/customer", createCustomerOrder);
-router.get("/customer", getCustomerOrders);
-router.patch("/customer/:id/cancel", cancelCustomerOrder);
+// Customer self-service ordering — now requires a registered, logged-in account
+router.post("/customer", protect, createCustomerOrder);
+router.get("/customer", protect, getCustomerOrders);
+router.patch("/customer/:id/cancel", protect, cancelCustomerOrder);
 
 export default router;
