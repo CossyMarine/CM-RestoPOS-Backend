@@ -252,7 +252,37 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
-// @desc    Promote/change a user's role.
+// @desc    Get EVERY user, including normal customers — used by the Users
+//          panel's "All Users" view so customers can be promoted to staff.
+// @route   GET /api/auth/users/all
+// @access  Protected — admin
+export const getAllUsersIncludingCustomers = async (req, res) => {
+  try {
+    const users = await User.find({}).sort({ createdAt: -1 });
+    res.json(users.map(adminUserView));
+  } catch (error) {
+    console.error("GET ALL USERS (INCL CUSTOMERS) ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch users" });
+  }
+};
+
+// @desc    Count of staff/admin accounts (customers excluded) — Dashboard metric
+// @route   GET /api/auth/staff-count
+// @access  Protected — admin
+export const getStaffCount = async (req, res) => {
+  try {
+    const totalStaff = await User.countDocuments({
+      $or: [{ isAdmin: true }, { role: { $ne: "customer" } }],
+    });
+    res.json({ totalStaff });
+  } catch (error) {
+    console.error("GET STAFF COUNT ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch staff count" });
+  }
+};
+
+// @desc    Promote/change a user's role — works for staff AND customers,
+//          so a normal customer account can be promoted to staff/admin.
 //          Body: { isAdmin: true } -> full admin
 //          Body: { role: "kitchen" | "waiter" | "accountant" } -> staff role, isAdmin false
 // @route   PATCH /api/auth/users/:id/role
@@ -289,7 +319,7 @@ export const updateUserRole = async (req, res) => {
   }
 };
 
-// @desc    Activate or deactivate a staff/admin account
+// @desc    Activate or deactivate any account
 // @route   PATCH /api/auth/users/:id/status
 // @access  Protected — admin
 export const toggleUserStatus = async (req, res) => {
