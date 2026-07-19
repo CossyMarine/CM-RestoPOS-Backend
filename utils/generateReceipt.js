@@ -5,7 +5,7 @@ import Shift from "../models/Shift.js";
 
 // Shared by staff orders and customer orders so bill numbering and
 // shift-linking can never drift apart between the two flows.
-export const generateReceiptForOrder = async (order) => {
+export const generateReceiptForOrder = async (order, { customer } = {}) => {
   const counter = await Counter.findOneAndUpdate(
     { name: "bill" },
     { $inc: { seq: 1 } },
@@ -25,6 +25,7 @@ export const generateReceiptForOrder = async (order) => {
     waiterName: order.waiterName,
     items: order.items,
     subtotal: order.subtotal,
+    customer: customer || order.customer || null,
   });
 
   return receipt;
