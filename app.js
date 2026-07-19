@@ -12,6 +12,8 @@ import receiptRoutes from "./routes/receiptRoutes.js";
 import shiftRoutes from "./routes/shiftRoutes.js";
 import voidRequestRoutes from "./routes/voidRequestRoutes.js";
 import revenueRoutes from "./routes/revenueRoutes.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
+import walletRoutes from "./routes/walletRoutes.js";
 
 dotenv.config();
 
@@ -57,5 +59,7 @@ app.use("/api/receipts", receiptRoutes);
 app.use("/api/shifts", shiftRoutes);
 app.use("/api/void-requests", voidRequestRoutes);
 app.use("/api/revenue", revenueRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/wallet", walletRoutes);
 
 export default app;
