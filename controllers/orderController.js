@@ -1,5 +1,6 @@
 // controllers/orderController.js
 import Order from "../models/Order.js";
+import Receipt from "../models/Receipt.js";
 import { generateReceiptForOrder } from "../utils/generateReceipt.js";
 
 // @desc    Create a new order and receipt (staff/manual entry)
@@ -65,7 +66,6 @@ export const updateOrderStatus = async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // Let any other open kitchen screens stay in sync in real time
     const io = req.app.get("io");
     io.emit("order:updated", order);
 
@@ -73,5 +73,38 @@ export const updateOrderStatus = async (req, res) => {
   } catch (error) {
     console.error("Error updating order status:", error.message);
     res.status(500).json({ message: "Failed to update order status", error: error.message });
+  }
+};
+
+// @desc    A waiter claims an online order (assigns themselves as server of record)
+// @route   PATCH /api/orders/:id/assign
+// @access  Protected — waiter, manager, admin
+export const assignOrderWaiter = async (req, res) => {
+  const { id } = req.params;
+  const { waiterName } = req.body;
+
+  if (!waiterName) {
+    return res.status(400).json({ message: "waiterName is required" });
+  }
+
+  try {
+    const order = await Order.findById(id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (order.source !== "online") {
+      return res.status(400).json({ message: "Only online orders can be claimed this way" });
+    }
+
+    order.waiterName = waiterName;
+    await order.save();
+
+    await Receipt.findOneAndUpdate({ order: order._id }, { waiterName });
+
+    const io = req.app.get("io");
+    io.emit("order:updated", order);
+
+    res.json(order);
+  } catch (error) {
+    console.error("Error assigning order:", error.message);
+    res.status(500).json({ message: "Failed to assign order", error: error.message });
   }
 };
