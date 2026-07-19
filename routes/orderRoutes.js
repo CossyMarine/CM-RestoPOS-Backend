@@ -1,6 +1,11 @@
 // routes/orderRoutes.js
 import express from "express";
-import { createOrder, getPendingOrders, updateOrderStatus } from "../controllers/orderController.js";
+import {
+  createOrder,
+  getPendingOrders,
+  updateOrderStatus,
+  assignOrderWaiter,
+} from "../controllers/orderController.js";
 import {
   createCustomerOrder,
   getCustomerOrders,
@@ -10,19 +15,12 @@ import { protect, authorize } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-/**
- * @route   POST /api/orders
- * @desc    Create a new order and receipt (staff/manual entry)
- * @access  Protected — cashier, manager, admin, waiter
- */
 router.post("/", protect, authorize("cashier", "manager", "admin", "waiter"), createOrder);
 
 router.get("/pending", protect, getPendingOrders);
 router.patch("/:id/status", protect, authorize("kitchen", "manager", "admin"), updateOrderStatus);
+router.patch("/:id/assign", protect, authorize("waiter", "manager", "admin"), assignOrderWaiter);
 
-/**
- * Customer-facing routes — guest session, no login required
- */
 router.post("/customer", createCustomerOrder);
 router.get("/customer", getCustomerOrders);
 router.patch("/customer/:id/cancel", cancelCustomerOrder);
