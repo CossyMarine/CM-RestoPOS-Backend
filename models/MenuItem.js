@@ -10,6 +10,8 @@ const menuItemSchema = new mongoose.Schema(
     imageUrl:      { type: String, default: null },
     imagePublicId: { type: String, default: null },
     isAvailable:   { type: Boolean, default: true },
+    pinned:        { type: Boolean, default: false },
+    pinOrder:      { type: Number, default: 0 },
   },
   { timestamps: true }
 );
