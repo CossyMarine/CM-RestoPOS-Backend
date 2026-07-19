@@ -19,13 +19,33 @@ const receiptSchema = new mongoose.Schema(
       default: "unpaid",
     },
 
+    // "both" = split cash + till payment
     paymentMethod: {
       type: String,
-      enum: ["cash", "mpesa_till", "mpesa_paybill", "mpesa_pochi", null],
+      enum: ["cash", "mpesa_till", "mpesa_paybill", "mpesa_pochi", "both", null],
       default: null,
     },
-    amountPaid:  { type: Number, default: null },
+    amountPaid:  { type: Number, default: null }, // total received (cash + till)
     changeGiven: { type: Number, default: null },
+
+    // Split breakdown — populated for every completed payment going forward
+    cashAmount: { type: Number, default: 0 },
+    tillAmount: { type: Number, default: 0 },
+
+    // ---- M-Pesa Daraja STK Push tracking ----
+    mpesaPhone:             { type: String, default: null },
+    mpesaCheckoutRequestId: { type: String, default: null, index: true },
+    mpesaMerchantRequestId: { type: String, default: null },
+    mpesaReceiptNumber:     { type: String, default: null },
+    mpesaResultDesc:        { type: String, default: null },
+    mpesaStatus: {
+      type: String,
+      enum: ["idle", "pending", "success", "failed"],
+      default: "idle",
+    },
+    // Held while an STK push is in flight, applied once Daraja confirms
+    pendingCashAmount: { type: Number, default: 0 },
+    pendingTillAmount: { type: Number, default: 0 },
 
     voidReason: { type: String, default: null },
     printedAt:  { type: Date, default: null },
