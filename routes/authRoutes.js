@@ -9,6 +9,8 @@ import {
   registerCustomer,
   checkAvailability,
   getAllUsers,
+  getAllUsersIncludingCustomers,
+  getStaffCount,
   updateUserRole,
   toggleUserStatus,
 } from "../controllers/authController.js";
@@ -26,6 +28,8 @@ router.get("/waiters", protect, getWaiters);
 
 // Admin — Users management panel
 router.get("/users", protect, authorize("admin"), getAllUsers);
+router.get("/users/all", protect, authorize("admin"), getAllUsersIncludingCustomers);
+router.get("/staff-count", protect, authorize("admin"), getStaffCount);
 router.patch("/users/:id/role", protect, authorize("admin"), updateUserRole);
 router.patch("/users/:id/status", protect, authorize("admin"), toggleUserStatus);
 
