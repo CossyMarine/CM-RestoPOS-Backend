@@ -87,6 +87,11 @@ export const addPettyCash = async (req, res) => {
 
 // Shared calculation used by both the preview (GET summary) and the
 // real close (POST close), so the two can never disagree.
+//
+// Cash/till are now attributed from the receipt's own cashAmount/tillAmount
+// fields, which are populated correctly for cash-only, till-only, AND split
+// "both" payments — so a split payment counts its cash portion toward
+// expected cash-in-drawer and its till portion toward M-Pesa totals.
 const computeShiftSummary = async (shiftId) => {
   const shift = await Shift.findById(shiftId);
   if (!shift) return null;
@@ -95,9 +100,10 @@ const computeShiftSummary = async (shiftId) => {
 
   const totals = { cash: 0, mpesa_till: 0, mpesa_paybill: 0, mpesa_pochi: 0 };
   paidReceipts.forEach((r) => {
-    if (r.paymentMethod && totals.hasOwnProperty(r.paymentMethod)) {
-      totals[r.paymentMethod] += r.amountPaid || 0;
-    }
+    totals.cash += r.cashAmount || 0;
+    totals.mpesa_till += r.tillAmount || 0;
+    if (r.paymentMethod === "mpesa_paybill") totals.mpesa_paybill += r.amountPaid || 0;
+    if (r.paymentMethod === "mpesa_pochi") totals.mpesa_pochi += r.amountPaid || 0;
   });
 
   const voidedReceipts = await Receipt.find({ shift: shiftId, status: "voided" });
