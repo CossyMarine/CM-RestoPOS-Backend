@@ -2,12 +2,14 @@
 import MenuItem from "../models/MenuItem.js";
 import { cloudinary } from "../Config/cloudinary.js";
 
-// @desc    Get all available menu items
+// @desc    Get all available menu items (pinned items always first)
 // @route   GET /api/menu
 // @access  Public
 export const getMenu = async (req, res) => {
   try {
     const items = await MenuItem.find({ isAvailable: true }).sort({
+      pinned: -1,
+      pinOrder: 1,
       category: 1,
       name: 1,
     });
@@ -90,7 +92,6 @@ export const updateMenuItem = async (req, res) => {
       return res.status(404).json({ message: "Menu item not found" });
     }
 
-    // If the image is being replaced, delete the old Cloudinary asset
     if (
       updates.imagePublicId !== undefined &&
       existing.imagePublicId &&
@@ -131,5 +132,64 @@ export const deleteMenuItem = async (req, res) => {
   } catch (error) {
     console.error("Error deleting menu item:", error.message);
     res.status(500).json({ message: "Failed to delete menu item" });
+  }
+};
+
+// @desc    Pin or unpin a menu item — pinned items float to the top for staff
+// @route   PATCH /api/menu/:id/pin
+// @access  Protected — admin, manager, waiter, accountant
+export const togglePinMenuItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { pinned } = req.body;
+
+    const item = await MenuItem.findById(id);
+    if (!item) return res.status(404).json({ message: "Menu item not found" });
+
+    if (pinned) {
+      const highestPinned = await MenuItem.findOne({ pinned: true }).sort({ pinOrder: -1 });
+      item.pinOrder = highestPinned ? highestPinned.pinOrder + 1 : 0;
+      item.pinned = true;
+    } else {
+      item.pinned = false;
+      item.pinOrder = 0;
+    }
+
+    await item.save();
+    res.json(item);
+  } catch (error) {
+    console.error("Error toggling pin:", error.message);
+    res.status(500).json({ message: "Failed to update pin status" });
+  }
+};
+
+// @desc    Persist a new drag-and-drop order for pinned items
+// @route   PUT /api/menu/reorder-pinned
+// @access  Protected — admin, manager, waiter, accountant
+export const reorderPinnedMenu = async (req, res) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      return res.status(400).json({ message: "orderedIds array is required" });
+    }
+
+    const ops = orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id, pinned: true },
+        update: { $set: { pinOrder: index } },
+      },
+    }));
+    await MenuItem.bulkWrite(ops);
+
+    const items = await MenuItem.find({ isAvailable: true }).sort({
+      pinned: -1,
+      pinOrder: 1,
+      category: 1,
+      name: 1,
+    });
+    res.json(items);
+  } catch (error) {
+    console.error("Error reordering pinned menu:", error.message);
+    res.status(500).json({ message: "Failed to reorder pinned items" });
   }
 };
