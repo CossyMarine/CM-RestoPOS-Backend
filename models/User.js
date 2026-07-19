@@ -38,6 +38,9 @@ const userSchema = new mongoose.Schema(
     },
 
     isActive: { type: Boolean, default: true },
+
+    // Reward/cashback points balance — only meaningful for role: "customer"
+    walletPoints: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
