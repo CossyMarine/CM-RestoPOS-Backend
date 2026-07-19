@@ -2,6 +2,33 @@
 import mongoose from "mongoose";
 import { orderItemSchema } from "./Order.js";
 
+// One entry per payment towards a bill — supports partial payments,
+// multiple methods on the same bill, and a full audit trail.
+const paymentEntrySchema = new mongoose.Schema(
+  {
+    amount: { type: Number, required: true },
+    method: {
+      type: String,
+      enum: [
+        "cash",
+        "mpesa_till",
+        "mpesa_paybill",
+        "mpesa_pochi",
+        "mpesa_stk",
+        "manual_till",
+        "reward",
+        "both",
+      ],
+      required: true,
+    },
+    // M-Pesa code, payer's full name (manual till), or a reward note
+    reference: { type: String, default: null },
+    paidBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    paidAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const receiptSchema = new mongoose.Schema(
   {
     billId: { type: String, required: true, unique: true },
@@ -13,26 +40,50 @@ const receiptSchema = new mongoose.Schema(
     items:       [orderItemSchema],
     subtotal:    { type: Number, required: true },
 
+    // The registered customer this bill belongs to (null for walk-in/guest bills)
+    customer: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+
     status: {
       type: String,
-      enum: ["unpaid", "paid", "voided"],
+      enum: ["unpaid", "partial", "paid", "voided"],
       default: "unpaid",
     },
 
-    // "both" = split cash + till payment
+    // "both" = split cash + till payment. Reflects the most recent/primary
+    // method — full breakdown lives in `payments`.
     paymentMethod: {
       type: String,
-      enum: ["cash", "mpesa_till", "mpesa_paybill", "mpesa_pochi", "both", null],
+      enum: [
+        "cash",
+        "mpesa_till",
+        "mpesa_paybill",
+        "mpesa_pochi",
+        "mpesa_stk",
+        "manual_till",
+        "reward",
+        "both",
+        null,
+      ],
       default: null,
     },
-    amountPaid:  { type: Number, default: null }, // total received (cash + till)
+    amountPaid:  { type: Number, default: null }, // running total received, across all payments
     changeGiven: { type: Number, default: null },
 
-    // Split breakdown — populated for every completed payment going forward
+    // Split breakdown for the classic staff cash/till flow
     cashAmount: { type: Number, default: 0 },
     tillAmount: { type: Number, default: 0 },
 
+    // Full payment history — supports partial payments and mixed methods
+    payments: [paymentEntrySchema],
+
+    // ---- Reward / cashback tracking for this bill ----
+    rewardPointsEarned:   { type: Number, default: 0 }, // cashback points this bill generated
+    rewardPointsRedeemed: { type: Number, default: 0 }, // points spent against this bill
+    rewardKesRedeemed:    { type: Number, default: 0 }, // KES value of points spent
+
     // ---- M-Pesa Daraja STK Push tracking ----
+    // "staff" = waiter/admin-initiated (existing flow), "wallet" = customer-initiated
+    mpesaSource: { type: String, enum: ["staff", "wallet", null], default: null },
     mpesaPhone:             { type: String, default: null },
     mpesaCheckoutRequestId: { type: String, default: null, index: true },
     mpesaMerchantRequestId: { type: String, default: null },
@@ -46,6 +97,8 @@ const receiptSchema = new mongoose.Schema(
     // Held while an STK push is in flight, applied once Daraja confirms
     pendingCashAmount: { type: Number, default: 0 },
     pendingTillAmount: { type: Number, default: 0 },
+    // Who triggered a wallet STK push — needed to credit the payer on the payment record
+    pendingPaidBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
     voidReason: { type: String, default: null },
     printedAt:  { type: Date, default: null },
@@ -56,3 +109,4 @@ const receiptSchema = new mongoose.Schema(
 );
 
 export default mongoose.model("Receipt", receiptSchema);
+export { orderItemSchema };
