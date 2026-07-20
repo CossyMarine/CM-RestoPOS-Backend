@@ -18,30 +18,32 @@ export const payReceipt = async (req, res) => {
   try {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    if (receipt.status !== "unpaid") {
+    if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
 
     const received = parseFloat(amountPaid);
-    if (isNaN(received) || received <= 0) {
-      return res.status(400).json({ message: "Enter a valid amount received" });
+    const balanceDue = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
+    if (isNaN(received) || received < balanceDue) {
+      return res.status(400).json({ message: "Amount received cannot be less than the balance due" });
     }
 
-    const changeGiven = Number((received - receipt.subtotal).toFixed(2));
-    if (changeGiven < 0) {
-      return res.status(400).json({
-        message: `Amount received (KES ${received}) is less than the bill (KES ${receipt.subtotal}). Change cannot be negative.`,
-      });
-    }
+    const changeGiven = Number((received - balanceDue).toFixed(2));
 
     receipt.status = "paid";
     receipt.paymentMethod = "cash";
-    receipt.cashAmount = received;
-    receipt.tillAmount = 0;
-    receipt.amountPaid = received;
+    receipt.cashAmount = (receipt.cashAmount || 0) + balanceDue;
+    receipt.tillAmount = receipt.tillAmount || 0;
+    receipt.amountPaid = receipt.subtotal;
     receipt.changeGiven = changeGiven;
     receipt.paidAt = new Date();
-    receipt.mpesaStatus = "idle";
+    receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+    receipt.payments.push({
+      amount: balanceDue,
+      method: "cash",
+      paidBy: req.user?._id || null,
+      paidAt: new Date(),
+    });
     await receipt.save();
 
     await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
@@ -67,14 +69,23 @@ const finalizeMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) => {
 
   receipt.status = "paid";
   receipt.paymentMethod = cashAmount > 0 ? "both" : "mpesa_till";
-  receipt.cashAmount = cashAmount;
-  receipt.tillAmount = tillAmount;
-  receipt.amountPaid = Number((cashAmount + tillAmount).toFixed(2));
+  receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
+  receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
+  receipt.amountPaid = receipt.subtotal;
   receipt.changeGiven = 0;
   receipt.paidAt = new Date();
   receipt.mpesaStatus = "success";
   receipt.mpesaReceiptNumber = mpesaReceiptNumber || receipt.mpesaReceiptNumber || null;
   receipt.mpesaResultDesc = "Payment received successfully";
+  if (cashAmount > 0) {
+    receipt.payments.push({ amount: cashAmount, method: "cash", paidAt: new Date() });
+  }
+  receipt.payments.push({
+    amount: tillAmount,
+    method: "mpesa_till",
+    reference: receipt.mpesaReceiptNumber,
+    paidAt: new Date(),
+  });
   await receipt.save();
 
   await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
@@ -127,8 +138,8 @@ const finalizeMpesaFailure = async ({ receipt, resultDesc, io }) => {
   });
 };
 
-// @desc    Trigger an STK push. cashAmount = 0 for till-only, or a partial
-//          amount for a split "both" payment (till covers the remainder).
+// @desc    Trigger an STK push ("Prompt"). cashAmount = 0 for prompt-only, or
+//          a partial amount for a split "both" payment (prompt covers the rest).
 // @route   POST /api/receipts/:id/mpesa/initiate
 // @access  Protected — admin
 export const initiateMpesaPayment = async (req, res) => {
@@ -138,24 +149,25 @@ export const initiateMpesaPayment = async (req, res) => {
   try {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    if (receipt.status !== "unpaid") {
+    if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
     if (!phone) {
       return res.status(400).json({ message: "M-Pesa phone number is required" });
     }
 
+    const balanceDue = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
     cashAmount = parseFloat(cashAmount) || 0;
     if (cashAmount < 0) {
       return res.status(400).json({ message: "Cash amount cannot be negative" });
     }
-    if (cashAmount >= receipt.subtotal) {
+    if (cashAmount >= balanceDue) {
       return res.status(400).json({
-        message: "Cash amount covers the full bill — use Cash payment instead",
+        message: "Cash amount covers the full balance — use Cash payment instead",
       });
     }
 
-    const tillAmount = Number((receipt.subtotal - cashAmount).toFixed(2));
+    const tillAmount = Number((balanceDue - cashAmount).toFixed(2));
 
     const stkRes = await stkPush({
       phone,
@@ -235,14 +247,12 @@ export const mpesaCallback = async (req, res) => {
     res.status(200).json({ message: "Callback processed" });
   } catch (error) {
     console.error("M-Pesa callback error:", error.message);
-    // Always 200 so Safaricom doesn't retry-storm us
     res.status(200).json({ message: "Callback error logged" });
   }
 };
 
 // @desc    Poll payment status. Also actively queries Daraja, so payment
-//          still completes even if the callback URL can't be reached
-//          (e.g. local development without a public URL).
+//          still completes even if the callback URL can't be reached.
 // @route   GET /api/receipts/:id/mpesa/status
 // @access  Protected — admin
 export const getMpesaStatus = async (req, res) => {
@@ -276,7 +286,6 @@ export const getMpesaStatus = async (req, res) => {
         return res.json({ status: "failed", message: queryRes.ResultDesc, receipt });
       }
     } catch (queryErr) {
-      // Safaricom often 500s this while the customer is still entering their PIN — keep polling.
       console.warn("M-Pesa status query still pending:", queryErr.response?.data || queryErr.message);
     }
 
@@ -314,12 +323,12 @@ export const cancelMpesaPayment = async (req, res) => {
 // LISTS / HISTORY / SUMMARY
 // ============================================================
 
-// @desc    Get all unpaid receipts
+// @desc    Get all unpaid or partially-paid receipts
 // @route   GET /api/receipts
 // @access  Protected — admin
 export const getReceipts = async (req, res) => {
   try {
-    const receipts = await Receipt.find({ status: "unpaid" }).sort({ createdAt: -1 });
+    const receipts = await Receipt.find({ status: { $in: ["unpaid", "partial"] } }).sort({ createdAt: -1 });
     res.json(receipts);
   } catch (error) {
     console.error("Error fetching receipts:", error.message);
@@ -356,7 +365,7 @@ export const getReceiptsTodaySummary = async (req, res) => {
         { $group: { _id: null, total: { $sum: "$subtotal" }, count: { $sum: 1 } } },
       ]),
       Receipt.aggregate([
-        { $match: { status: "unpaid", createdAt: { $gte: startOfDay, $lte: endOfDay } } },
+        { $match: { status: { $in: ["unpaid", "partial"] }, createdAt: { $gte: startOfDay, $lte: endOfDay } } },
         { $group: { _id: null, total: { $sum: "$subtotal" }, count: { $sum: 1 } } },
       ]),
     ]);
@@ -373,13 +382,13 @@ export const getReceiptsTodaySummary = async (req, res) => {
   }
 };
 
-// @desc    Get unpaid receipts for a specific waiter
+// @desc    Get unpaid/partial receipts for a specific waiter
 // @route   GET /api/receipts/waiter/:name
 // @access  Protected
 export const getReceiptsByWaiter = async (req, res) => {
   try {
     const { name } = req.params;
-    const receipts = await Receipt.find({ waiterName: name, status: "unpaid" }).sort({
+    const receipts = await Receipt.find({ waiterName: name, status: { $in: ["unpaid", "partial"] } }).sort({
       createdAt: -1,
     });
     res.json(receipts);
@@ -404,8 +413,6 @@ export const getReceiptById = async (req, res) => {
 };
 
 // @desc    Paginated bill history across ALL waiters, every status, newest first.
-//          Supports search (billId / waiter / table) and a createdAt date range.
-//          Default page size is 10.
 // @route   GET /api/receipts/history?page=1&limit=10&q=search&from=ISO&to=ISO
 // @access  Protected
 export const getReceiptHistory = async (req, res) => {
