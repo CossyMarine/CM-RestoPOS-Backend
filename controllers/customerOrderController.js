@@ -65,7 +65,7 @@ export const getCustomerOrders = async (req, res) => {
 
     const orderIds = orders.map((o) => o._id);
     const receipts = await Receipt.find({ order: { $in: orderIds } })
-      .select("order billId status amountPaid subtotal")
+      .select("order billId status amountPaid subtotal pendingManualPayments")
       .lean();
     const receiptByOrder = Object.fromEntries(receipts.map((r) => [String(r.order), r]));
 
@@ -77,6 +77,7 @@ export const getCustomerOrders = async (req, res) => {
           billId: receipt?.billId || null,
           billStatus: receipt?.status || null,
           amountPaid: receipt?.amountPaid || 0,
+          billHasPendingPayment: (receipt?.pendingManualPayments?.length || 0) > 0,
         };
       }),
       page,
