@@ -96,6 +96,7 @@ export const resolveBill = async (req, res) => {
       subtotal: receipt.subtotal,
       amountPaid: receipt.amountPaid || 0,
       balanceDue,
+      hasPendingManualPayment: (receipt.pendingManualPayments?.length || 0) > 0,
     });
   } catch (error) {
     console.error("Error resolving bill:", error.message);
@@ -103,8 +104,15 @@ export const resolveBill = async (req, res) => {
   }
 };
 
-// @desc    Pay a bill (own or another's) via manual till — customer supplies
-//          the M-Pesa code or their full name as payment proof
+// @desc    Pay a bill via manual till.
+//          - Staff (admin/waiter/manager/cashier acting from the Orders ledger,
+//            i.e. req.user.isAdmin) have already verified the till/M-Pesa message
+//            in person, so this posts straight to the bill as before.
+//          - A customer paying themselves from the wallet is NOT trusted blindly:
+//            their submission is queued on the receipt (pendingManualPayments) and
+//            the bill stays unpaid/partial until an admin confirms it on the
+//            Payments page. This is what "waiting for approval" means everywhere
+//            else in the app (customer order list, admin ledger, sidebar toast).
 // @route   POST /api/wallet/pay/manual
 // @access  Protected
 export const payWithManualTill = async (req, res) => {
@@ -130,16 +138,34 @@ export const payWithManualTill = async (req, res) => {
     }
 
     const io = req.app.get("io");
-    const updated = await applyPaymentToReceipt({
-      receipt,
+
+    // Trusted staff entry (Orders ledger "Till" button) — apply immediately.
+    if (req.user.isAdmin) {
+      const updated = await applyPaymentToReceipt({
+        receipt,
+        amount: amt,
+        method: "manual_till",
+        reference: reference.trim(),
+        paidBy: req.user._id,
+        io,
+      });
+      return res.json({ message: "Payment recorded", receipt: updated });
+    }
+
+    // Customer self-service — queue for admin confirmation, don't touch the balance yet.
+    receipt.pendingManualPayments.push({
       amount: amt,
-      method: "manual_till",
       reference: reference.trim(),
       paidBy: req.user._id,
-      io,
+      paidByName: req.user.fullName,
+      submittedAt: new Date(),
     });
+    await receipt.save();
 
-    res.json({ message: "Payment recorded — pending confirmation by the restaurant", receipt: updated });
+    io.emit("receipt:manualPending", { receipt });
+    io.emit("receipt:updated", receipt);
+
+    res.json({ message: "Payment submitted — pending confirmation by the restaurant", receipt });
   } catch (error) {
     console.error("Error recording manual payment:", error.message);
     res.status(500).json({ message: "Failed to record payment", error: error.message });
