@@ -100,6 +100,21 @@ const receiptSchema = new mongoose.Schema(
     // Who triggered a wallet STK push — needed to credit the payer on the payment record
     pendingPaidBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
+    // ---- Customer self-reported manual till payments awaiting admin confirmation ----
+    // A customer paying via the wallet claims they sent money to the till, but this is
+    // NOT applied to the bill (status stays unpaid/partial) until an admin confirms it
+    // here on the Payments page. Staff-entered till payments (from the Orders ledger)
+    // skip this queue entirely and post straight to `payments` — see payWithManualTill.
+    pendingManualPayments: [
+      {
+        amount: { type: Number, required: true },
+        reference: { type: String, required: true },
+        paidBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+        paidByName: { type: String, default: null },
+        submittedAt: { type: Date, default: Date.now },
+      },
+    ],
+
     voidReason: { type: String, default: null },
     printedAt:  { type: Date, default: null },
     paidAt:     { type: Date, default: null },
