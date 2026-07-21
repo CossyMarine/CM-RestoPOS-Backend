@@ -1,0 +1,214 @@
+// controllers/paymentController.js
+// Powers the admin "Payments" page: a flat, filterable/searchable feed of every
+// payment ever recorded (cash, till, STK, reward...) plus the queue of
+// customer-submitted manual-till payments still waiting for admin confirmation.
+import Receipt from "../models/Receipt.js";
+import { applyPaymentToReceipt } from "../utils/walletPayments.js";
+
+// @desc    Flattened, paginated list of individual payment entries across all
+//          bills — filterable by method, searchable by bill/table/reference/payer.
+// @route   GET /api/payments/transactions?page=1&limit=15&method=cash&q=&from=&to=
+// @access  Protected — admin, accountant
+export const getTransactions = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 15);
+    const { method, q, from, to } = req.query;
+
+    const pipeline = [{ $unwind: "$payments" }];
+
+    const matchStage = {};
+    if (method) matchStage["payments.method"] = method;
+    if (from || to) {
+      matchStage["payments.paidAt"] = {};
+      if (from) matchStage["payments.paidAt"].$gte = new Date(from);
+      if (to) matchStage["payments.paidAt"].$lte = new Date(to);
+    }
+    if (Object.keys(matchStage).length) pipeline.push({ $match: matchStage });
+
+    pipeline.push(
+      {
+        $lookup: {
+          from: "users",
+          localField: "payments.paidBy",
+          foreignField: "_id",
+          as: "payerDoc",
+        },
+      },
+      {
+        $addFields: {
+          payerName: { $ifNull: [{ $arrayElemAt: ["$payerDoc.fullName", 0] }, null] },
+        },
+      }
+    );
+
+    if (q) {
+      const trimmed = q.trim();
+      const orClauses = [
+        { billId: { $regex: trimmed, $options: "i" } },
+        { waiterName: { $regex: trimmed, $options: "i" } },
+        { "payments.reference": { $regex: trimmed, $options: "i" } },
+        { payerName: { $regex: trimmed, $options: "i" } },
+        { tableNumber: { $regex: trimmed, $options: "i" } },
+      ];
+      pipeline.push({ $match: { $or: orClauses } });
+    }
+
+    pipeline.push({ $sort: { "payments.paidAt": -1 } });
+
+    const countPipeline = [...pipeline, { $count: "total" }];
+    const dataPipeline = [
+      ...pipeline,
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+      {
+        $project: {
+          _id: 0,
+          paymentId: "$payments._id",
+          receiptId: "$_id",
+          billId: 1,
+          tableNumber: 1,
+          waiterName: 1,
+          status: 1,
+          amount: "$payments.amount",
+          method: "$payments.method",
+          reference: "$payments.reference",
+          paidAt: "$payments.paidAt",
+          payerName: 1,
+        },
+      },
+    ];
+
+    const [transactions, countRes] = await Promise.all([
+      Receipt.aggregate(dataPipeline),
+      Receipt.aggregate(countPipeline),
+    ]);
+    const total = countRes[0]?.total || 0;
+
+    res.json({
+      transactions,
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  } catch (error) {
+    console.error("Error fetching transactions:", error.message);
+    res.status(500).json({ message: "Failed to fetch transactions" });
+  }
+};
+
+// @desc    Every customer-submitted manual-till payment still awaiting confirmation
+// @route   GET /api/payments/pending
+// @access  Protected — admin, accountant
+export const getPendingManualPayments = async (req, res) => {
+  try {
+    const receipts = await Receipt.find({ "pendingManualPayments.0": { $exists: true } })
+      .populate("pendingManualPayments.paidBy", "fullName")
+      .sort({ updatedAt: -1 });
+
+    const pending = [];
+    receipts.forEach((r) => {
+      r.pendingManualPayments.forEach((p) => {
+        pending.push({
+          receiptId: r._id,
+          paymentId: p._id,
+          billId: r.billId,
+          tableNumber: r.tableNumber,
+          waiterName: r.waiterName,
+          subtotal: r.subtotal,
+          amountPaid: r.amountPaid || 0,
+          balanceDue: Number((r.subtotal - (r.amountPaid || 0)).toFixed(2)),
+          amount: p.amount,
+          reference: p.reference,
+          paidByName: p.paidBy?.fullName || p.paidByName || "Customer",
+          submittedAt: p.submittedAt,
+        });
+      });
+    });
+    pending.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+
+    res.json(pending);
+  } catch (error) {
+    console.error("Error fetching pending manual payments:", error.message);
+    res.status(500).json({ message: "Failed to fetch pending payments" });
+  }
+};
+
+// @desc    Count of all pending manual-till submissions — powers the sidebar badge
+// @route   GET /api/payments/pending/count
+// @access  Protected — admin, accountant
+export const getPendingManualPaymentsCount = async (req, res) => {
+  try {
+    const result = await Receipt.aggregate([
+      { $project: { count: { $size: { $ifNull: ["$pendingManualPayments", []] } } } },
+      { $group: { _id: null, total: { $sum: "$count" } } },
+    ]);
+    res.json({ count: result[0]?.total || 0 });
+  } catch (error) {
+    console.error("Error counting pending manual payments:", error.message);
+    res.status(500).json({ message: "Failed to count pending payments" });
+  }
+};
+
+// @desc    Admin confirms a customer-submitted manual till payment — applies
+//          it to the bill (may flip status to partial/paid) and credits cashback.
+// @route   PATCH /api/payments/pending/:receiptId/:paymentId/confirm
+// @access  Protected — admin
+export const confirmManualPayment = async (req, res) => {
+  const { receiptId, paymentId } = req.params;
+  try {
+    const receipt = await Receipt.findById(receiptId);
+    if (!receipt) return res.status(404).json({ message: "Bill not found" });
+
+    const entry = receipt.pendingManualPayments.id(paymentId);
+    if (!entry) return res.status(404).json({ message: "Pending payment not found" });
+
+    const { amount, reference, paidBy } = entry;
+    receipt.pendingManualPayments.pull(paymentId);
+
+    const io = req.app.get("io");
+    const updated = await applyPaymentToReceipt({
+      receipt,
+      amount,
+      method: "manual_till",
+      reference,
+      paidBy,
+      io,
+    });
+
+    io.emit("receipt:manualPaymentResolved", { receiptId: updated._id, paymentId, action: "confirmed" });
+
+    res.json({ message: "Payment confirmed", receipt: updated });
+  } catch (error) {
+    console.error("Error confirming manual payment:", error.message);
+    res.status(500).json({ message: "Failed to confirm payment", error: error.message });
+  }
+};
+
+// @desc    Admin rejects a customer's claimed manual till payment — discarded,
+//          the bill's balance is untouched since it was never applied.
+// @route   PATCH /api/payments/pending/:receiptId/:paymentId/reject
+// @access  Protected — admin
+export const rejectManualPayment = async (req, res) => {
+  const { receiptId, paymentId } = req.params;
+  try {
+    const receipt = await Receipt.findById(receiptId);
+    if (!receipt) return res.status(404).json({ message: "Bill not found" });
+
+    const entry = receipt.pendingManualPayments.id(paymentId);
+    if (!entry) return res.status(404).json({ message: "Pending payment not found" });
+
+    receipt.pendingManualPayments.pull(paymentId);
+    await receipt.save();
+
+    const io = req.app.get("io");
+    io.emit("receipt:manualPaymentResolved", { receiptId: receipt._id, paymentId, action: "rejected" });
+    io.emit("receipt:updated", receipt);
+
+    res.json({ message: "Payment rejected", receipt });
+  } catch (error) {
+    console.error("Error rejecting manual payment:", error.message);
+    res.status(500).json({ message: "Failed to reject payment", error: error.message });
+  }
+};
