@@ -41,6 +41,22 @@ const userSchema = new mongoose.Schema(
 
     // Reward/cashback points balance — only meaningful for role: "customer"
     walletPoints: { type: Number, default: 0 },
+
+    // ---- Waiter management metadata (role: "waiter" only) ----
+    // When/how this user became a waiter.
+    waiterSince: { type: Date },
+    waiterSource: { type: String, enum: ["direct", "promoted"], default: "direct" },
+
+    // Global kill-switch — true = never appears in ANYONE's waiter dropdown.
+    // Set automatically when a waiter is "dropped" via admin management.
+    hiddenFromSelector: { type: Boolean, default: false },
+
+    // Per-waiter selector control — governs what THIS waiter sees in their
+    // own "assign/select waiter" dropdown after logging in.
+    // "all"    = sees every active, non-globally-hidden waiter (default/legacy behavior)
+    // "custom" = sees only themselves + the waiters listed in visibleWaiters
+    selectorMode: { type: String, enum: ["all", "custom"], default: "all" },
+    visibleWaiters: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   },
   { timestamps: true }
 );
