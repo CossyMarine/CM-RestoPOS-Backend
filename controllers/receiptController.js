@@ -323,12 +323,22 @@ export const cancelMpesaPayment = async (req, res) => {
 // LISTS / HISTORY / SUMMARY
 // ============================================================
 
+// Online orders that no waiter has claimed yet shouldn't clutter the
+// normal admin tabs — they live in the "Pending Online" tab instead
+// until a waiter (or admin) assigns themselves via /orders/:id/assign.
+const excludeUnclaimedOnline = {
+  $or: [{ source: { $ne: "online" } }, { waiterName: { $ne: null } }],
+};
+
 // @desc    Get all unpaid or partially-paid receipts
 // @route   GET /api/receipts
 // @access  Protected — admin
 export const getReceipts = async (req, res) => {
   try {
-    const receipts = await Receipt.find({ status: { $in: ["unpaid", "partial"] } }).sort({ createdAt: -1 });
+    const receipts = await Receipt.find({
+      status: { $in: ["unpaid", "partial"] },
+      ...excludeUnclaimedOnline,
+    }).sort({ createdAt: -1 });
     res.json(receipts);
   } catch (error) {
     console.error("Error fetching receipts:", error.message);
@@ -341,11 +351,30 @@ export const getReceipts = async (req, res) => {
 // @access  Protected — admin, accountant
 export const getPaidReceipts = async (req, res) => {
   try {
-    const receipts = await Receipt.find({ status: "paid" }).sort({ paidAt: -1 }).limit(200);
+    const receipts = await Receipt.find({
+      status: "paid",
+      ...excludeUnclaimedOnline,
+    }).sort({ paidAt: -1 }).limit(200);
     res.json(receipts);
   } catch (error) {
     console.error("Error fetching paid receipts:", error.message);
     res.status(500).json({ message: "Failed to fetch paid receipts" });
+  }
+};
+
+// @desc    Online orders placed by customers that no waiter has claimed yet
+// @route   GET /api/receipts/online-pending
+// @access  Protected — admin
+export const getPendingOnlineReceipts = async (req, res) => {
+  try {
+    const receipts = await Receipt.find({
+      source: "online",
+      waiterName: null,
+    }).sort({ createdAt: 1 });
+    res.json(receipts);
+  } catch (error) {
+    console.error("Error fetching pending online receipts:", error.message);
+    res.status(500).json({ message: "Failed to fetch pending online receipts" });
   }
 };
 
@@ -425,7 +454,7 @@ export const getReceiptHistory = async (req, res) => {
     const q = (req.query.q || "").trim();
     const { from, to } = req.query;
 
-    const filter = {};
+    const filter = { ...excludeUnclaimedOnline };
     if (q) {
       const orClauses = [
         { billId: { $regex: q, $options: "i" } },
@@ -434,7 +463,10 @@ export const getReceiptHistory = async (req, res) => {
       orClauses.push(
         isNaN(q) ? { tableNumber: { $regex: q, $options: "i" } } : { tableNumber: q }
       );
-      filter.$or = orClauses;
+      // filter already has $or from excludeUnclaimedOnline — combine with $and
+      filter.$and = [{ $or: orClauses }];
+      delete filter.$or;
+      filter.$and.push({ $or: excludeUnclaimedOnline.$or });
     }
     if (from || to) {
       filter.createdAt = {};
