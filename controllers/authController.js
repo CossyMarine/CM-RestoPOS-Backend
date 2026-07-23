@@ -224,13 +224,21 @@ export const createUser = async (req, res) => {
 };
 
 // @desc    Get all active waiters (excluding those hidden from the ordering selector)
+// @desc    Get the waiter list visible to the CURRENT logged-in user's dropdown
 // @route   GET /api/auth/waiters
 // @access  Protected
 export const getWaiters = async (req, res) => {
   try {
-    const waiters = await User.find({ role: "waiter", isActive: true, hiddenFromSelector: { $ne: true } })
-      .select("fullName")
-      .sort({ fullName: 1 });
+    const requester = req.user; // set by `protect` middleware, already the full user doc
+
+    const baseFilter = { role: "waiter", isActive: true, hiddenFromSelector: { $ne: true } };
+
+    // If the requester is a waiter with a custom-restricted dropdown, narrow it down
+    if (requester?.role === "waiter" && requester.selectorMode === "custom") {
+      baseFilter._id = { $in: requester.visibleWaiters || [] };
+    }
+
+    const waiters = await User.find(baseFilter).select("fullName").sort({ fullName: 1 });
 
     res.json(waiters.map((w) => ({ id: w._id, fullName: w.fullName })));
   } catch (error) {
