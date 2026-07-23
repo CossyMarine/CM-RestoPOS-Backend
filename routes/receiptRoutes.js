@@ -16,6 +16,7 @@ import {
   getReceiptHistoryByWaiter,
   addItemsToReceipt,
   markReceiptPrinted,
+  getPendingOnlineReceipts,
 } from "../controllers/receiptController.js";
 import { protect, authorize } from "../Middlewares/authMiddleware.js";
 
@@ -48,6 +49,9 @@ router.get("/history", protect, getReceiptHistory);
 
 router.get("/waiter/:name/history", protect, getReceiptHistoryByWaiter);
 router.get("/waiter/:name", protect, getReceiptsByWaiter);
+
+//Pending Online Orders
+router.get("/online-pending", protect, authorize("admin"), getPendingOnlineReceipts);
 
 // Keep this LAST — it's a single dynamic segment and would otherwise
 // swallow "/paid", "/history", "/summary/*" and "/waiter/..." above it.
