@@ -223,7 +223,6 @@ export const createUser = async (req, res) => {
   }
 };
 
-// @desc    Get all active waiters (excluding those hidden from the ordering selector)
 // @desc    Get the waiter list visible to the CURRENT logged-in user's dropdown
 // @route   GET /api/auth/waiters
 // @access  Protected
@@ -233,9 +232,12 @@ export const getWaiters = async (req, res) => {
 
     const baseFilter = { role: "waiter", isActive: true, hiddenFromSelector: { $ne: true } };
 
-    // If the requester is a waiter with a custom-restricted dropdown, narrow it down
+    // If the requester is a waiter with a custom-restricted dropdown, narrow it down —
+    // but always include the requester's own id, since a waiter must always be able
+    // to select themselves regardless of what the admin picked for them.
     if (requester?.role === "waiter" && requester.selectorMode === "custom") {
-      baseFilter._id = { $in: requester.visibleWaiters || [] };
+      const allowedIds = [...(requester.visibleWaiters || []), requester._id];
+      baseFilter._id = { $in: allowedIds };
     }
 
     const waiters = await User.find(baseFilter).select("fullName").sort({ fullName: 1 });
