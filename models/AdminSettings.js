@@ -11,9 +11,6 @@ const rewardSettingsSchema = new mongoose.Schema(
     // Minimum points balance a customer must reach before they can redeem
     targetPoints: { type: Number, default: 0 },
     description: { type: String, default: "" },
-    //Assume Table Number
-    assumeTableNumberCustomer: { type: Boolean, default: false },
-    assumeTableNumberWaiter: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -31,6 +28,10 @@ const adminSettingsSchema = new mongoose.Schema(
     whatsappNumber: { type: String, default: null },
     // "Call to manage" number shown on the profile page
     callNumber: { type: String, default: null },
+
+    // Table Number Behavior
+    assumeTableNumberCustomer: { type: Boolean, default: false },
+    assumeTableNumberWaiter: { type: Boolean, default: false },
 
     reward: { type: rewardSettingsSchema, default: () => ({}) },
   },
