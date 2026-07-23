@@ -168,3 +168,52 @@ export const toggleWaiterVisibility = async (req, res) => {
     res.status(500).json({ message: "Failed to update visibility" });
   }
 };
+
+// @route GET /api/waiters/management/:id/selector-settings
+// Returns this waiter's current selector config + the full list of other waiters to pick from
+export const getWaiterSelectorSettings = async (req, res) => {
+  try {
+    const waiter = await User.findOne({ _id: req.params.id, role: "waiter" })
+      .select("fullName selectorMode visibleWaiters");
+    if (!waiter) return res.status(404).json({ message: "Waiter not found" });
+
+    const allWaiters = await User.find({ role: "waiter", _id: { $ne: waiter._id } })
+      .select("fullName isActive")
+      .sort({ fullName: 1 });
+
+    res.json({
+      id: waiter._id,
+      fullName: waiter.fullName,
+      selectorMode: waiter.selectorMode || "all",
+      visibleWaiters: (waiter.visibleWaiters || []).map(String),
+      allWaiters: allWaiters.map((w) => ({ id: w._id, fullName: w.fullName, isActive: w.isActive })),
+    });
+  } catch (error) {
+    console.error("GET WAITER SELECTOR SETTINGS ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch selector settings" });
+  }
+};
+
+// @route PATCH /api/waiters/management/:id/selector-settings
+// Body: { selectorMode: 'all' | 'custom', visibleWaiters: [waiterId, ...] }
+export const updateWaiterSelectorSettings = async (req, res) => {
+  try {
+    const { selectorMode, visibleWaiters } = req.body;
+
+    if (selectorMode && !["all", "custom"].includes(selectorMode)) {
+      return res.status(400).json({ message: "Invalid selector mode" });
+    }
+
+    const waiter = await User.findOne({ _id: req.params.id, role: "waiter" });
+    if (!waiter) return res.status(404).json({ message: "Waiter not found" });
+
+    if (selectorMode) waiter.selectorMode = selectorMode;
+    if (Array.isArray(visibleWaiters)) waiter.visibleWaiters = visibleWaiters;
+
+    await waiter.save();
+    res.json({ message: "Selector settings updated" });
+  } catch (error) {
+    console.error("UPDATE WAITER SELECTOR SETTINGS ERROR:", error);
+    res.status(500).json({ message: "Failed to update selector settings" });
+  }
+};
