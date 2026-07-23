@@ -18,33 +18,26 @@ export const getSettings = async (req, res) => {
 // @route   PATCH /api/settings
 // @access  Protected — admin
 export const updateSettings = async (req, res) => {
-  const { tillNumber, tillName, whatsappNumber, callNumber, reward } = req.body;
-
+  const { tillNumber, tillName, whatsappNumber, callNumber, reward, assumeTableNumberCustomer, assumeTableNumberWaiter } = req.body;
   try {
     const settings = await AdminSettings.getSettings();
-
     if (tillNumber !== undefined) settings.tillNumber = tillNumber;
     if (tillName !== undefined) settings.tillName = tillName;
     if (whatsappNumber !== undefined) settings.whatsappNumber = whatsappNumber;
     if (callNumber !== undefined) settings.callNumber = callNumber;
-
+    if (assumeTableNumberCustomer !== undefined) settings.assumeTableNumberCustomer = assumeTableNumberCustomer;
+    if (assumeTableNumberWaiter !== undefined) settings.assumeTableNumberWaiter = assumeTableNumberWaiter;
     if (reward && typeof reward === "object") {
       const current = settings.reward.toObject ? settings.reward.toObject() : settings.reward;
       settings.reward = { ...current, ...reward };
     }
-
     await settings.save();
     res.json(settings);
   } catch (error) {
-    console.error("Error updating settings:", error.message);
     res.status(500).json({ message: "Failed to update settings", error: error.message });
   }
 };
 
-// @desc    Public settings needed by the customer app — WhatsApp/call numbers,
-//          till number for manual payment, and reward program description
-// @route   GET /api/settings/public
-// @access  Public
 export const getPublicSettings = async (req, res) => {
   try {
     const s = await AdminSettings.getSettings();
@@ -53,6 +46,8 @@ export const getPublicSettings = async (req, res) => {
       tillName: s.tillName,
       whatsappNumber: s.whatsappNumber,
       callNumber: s.callNumber,
+      assumeTableNumberCustomer: s.assumeTableNumberCustomer,
+      assumeTableNumberWaiter: s.assumeTableNumberWaiter,
       reward: {
         enabled: s.reward.enabled,
         pointValueKes: s.reward.pointValueKes,
@@ -61,7 +56,6 @@ export const getPublicSettings = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error fetching public settings:", error.message);
     res.status(500).json({ message: "Failed to fetch settings" });
   }
 };
