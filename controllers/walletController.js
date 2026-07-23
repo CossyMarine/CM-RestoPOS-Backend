@@ -106,20 +106,25 @@ export const resolveBill = async (req, res) => {
 
 // @desc    Pay a bill via manual till.
 //          - Staff (admin/waiter/manager/cashier acting from the Orders ledger,
-//            i.e. req.user.isAdmin) have already verified the till/M-Pesa message
-//            in person, so this posts straight to the bill as before.
-//          - A customer paying themselves from the wallet is NOT trusted blindly:
-//            their submission is queued on the receipt (pendingManualPayments) and
-//            the bill stays unpaid/partial until an admin confirms it on the
-//            Payments page. This is what "waiting for approval" means everywhere
-//            else in the app (customer order list, admin ledger, sidebar toast).
+//            i.e. req.user.isAdmin) have already verified the till payment in
+//            person, so no M-Pesa code / name is required from them — this
+//            posts straight to the bill as before.
+//          - A customer paying themselves from the wallet IS required to give
+//            an M-Pesa code or their full name as proof. Their submission is
+//            queued on the receipt (pendingManualPayments) and the bill stays
+//            unpaid/partial until an admin confirms it on the Payments page.
+//            This is what "waiting for approval" means everywhere else in the
+//            app (customer order list, admin ledger, sidebar toast).
 // @route   POST /api/wallet/pay/manual
 // @access  Protected
 export const payWithManualTill = async (req, res) => {
   const { receiptId, amount, reference } = req.body;
 
   if (!receiptId || !amount) return res.status(400).json({ message: "Bill and amount are required" });
-  if (!reference || !reference.trim()) {
+
+  // Only customers self-servicing from the wallet need to prove the payment —
+  // staff entering it from the Orders ledger have already confirmed it in person.
+  if (!req.user.isAdmin && (!reference || !reference.trim())) {
     return res.status(400).json({ message: "Enter the M-Pesa code or your full name as payment proof" });
   }
 
@@ -145,7 +150,7 @@ export const payWithManualTill = async (req, res) => {
         receipt,
         amount: amt,
         method: "manual_till",
-        reference: reference.trim(),
+        reference: reference && reference.trim() ? reference.trim() : null,
         paidBy: req.user._id,
         io,
       });
