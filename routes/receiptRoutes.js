@@ -2,6 +2,7 @@
 import express from "express";
 import {
   payReceipt,
+  payCashAndTill,
   initiateMpesaPayment,
   mpesaCallback,
   getMpesaStatus,
@@ -22,6 +23,7 @@ const router = express.Router();
 
 // Payment
 router.patch("/:id/pay", protect, authorize("admin"), payReceipt);
+router.patch("/:id/pay/cash-till", protect, authorize("admin"), payCashAndTill);
 router.post("/:id/mpesa/initiate", protect, authorize("admin"), initiateMpesaPayment);
 router.get("/:id/mpesa/status", protect, authorize("admin"), getMpesaStatus);
 router.post("/:id/mpesa/cancel", protect, authorize("admin"), cancelMpesaPayment);
