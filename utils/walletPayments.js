@@ -17,6 +17,30 @@ export const computeCashback = (amountKes, settings) => {
   return { points, kes: Number((points * pointValue).toFixed(2)) };
 };
 
+// Credits cashback for a single payment amount against a bill's registered
+// customer, if any. Mutates `receipt.rewardPointsEarned` in memory — caller
+// is responsible for saving the receipt. This is the ONE place cashback
+// gets computed, so every payment path (cash, till, STK, wallet) must call
+// this or cashback silently never gets credited.
+export const creditCashback = async (receipt, amount) => {
+  if (!receipt.customer) return;
+
+  const settings = await AdminSettings.getSettings();
+  const { points, kes } = computeCashback(amount, settings);
+  if (points <= 0) return;
+
+  receipt.rewardPointsEarned = (receipt.rewardPointsEarned || 0) + points;
+  await User.findByIdAndUpdate(receipt.customer, { $inc: { walletPoints: points } });
+  await RewardTransaction.create({
+    user: receipt.customer,
+    type: "earn",
+    points,
+    kesEquivalent: kes,
+    receipt: receipt._id,
+    note: `Cashback on payment of KES ${amount} for bill ${receipt.billId}`,
+  });
+};
+
 // Record a payment entry on a bill, roll up the running total, flip status
 // to partial/paid, and credit any cashback to the bill's registered customer.
 // Does NOT save `receipt` for the caller — callers should have already set
@@ -33,22 +57,7 @@ export const applyPaymentToReceipt = async ({ receipt, amount, method, reference
   receipt.status = totalPaid >= receipt.subtotal ? "paid" : "partial";
   if (receipt.status === "paid") receipt.paidAt = new Date();
 
-  if (receipt.customer) {
-    const settings = await AdminSettings.getSettings();
-    const { points, kes } = computeCashback(amount, settings);
-    if (points > 0) {
-      receipt.rewardPointsEarned = (receipt.rewardPointsEarned || 0) + points;
-      await User.findByIdAndUpdate(receipt.customer, { $inc: { walletPoints: points } });
-      await RewardTransaction.create({
-        user: receipt.customer,
-        type: "earn",
-        points,
-        kesEquivalent: kes,
-        receipt: receipt._id,
-        note: `Cashback on payment of KES ${amount} for bill ${receipt.billId}`,
-      });
-    }
-  }
+  await creditCashback(receipt, amount);
 
   await receipt.save();
 
