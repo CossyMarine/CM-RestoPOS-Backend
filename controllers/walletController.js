@@ -53,13 +53,30 @@ export const getMyWallet = async (req, res) => {
   }
 };
 
+// Turns "#B002", "B002", "002", "b2", etc. into the canonical "#B0002"
+// format bills are actually stored as, so customers can search loosely.
+const normalizeBillId = (raw) => {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (!digits) return null;
+  const num = parseInt(digits, 10);
+  if (Number.isNaN(num)) return null;
+  return `#B${num.toString().padStart(4, "0")}`;
+};
+
 // @desc    Resolve a bill for payment. Own bill: send billId only. Someone
 //          else's bill: send billId + their registered email or phone.
 // @route   POST /api/wallet/resolve-bill
 // @access  Protected
 export const resolveBill = async (req, res) => {
-  const { billId, identifier } = req.body;
-  if (!billId) return res.status(400).json({ message: "Bill ID is required" });
+  const { billId: rawBillId, identifier } = req.body;
+  if (!rawBillId || !rawBillId.trim()) {
+    return res.status(400).json({ message: "Bill ID is required" });
+  }
+
+  const billId = normalizeBillId(rawBillId);
+  if (!billId) {
+    return res.status(400).json({ message: "That doesn't look like a valid Bill ID" });
+  }
 
   try {
     let targetUserId = req.user._id;
@@ -75,7 +92,7 @@ export const resolveBill = async (req, res) => {
     }
 
     const receipt = await Receipt.findOne({
-      billId: billId.trim(),
+      billId,
       customer: targetUserId,
       status: { $in: ["unpaid", "partial"] },
     });
