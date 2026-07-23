@@ -15,6 +15,7 @@ import revenueRoutes from "./routes/revenueRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import waiterRoutes from "./routes/waiterRoutes.js";
 
 dotenv.config();
 
@@ -63,5 +64,6 @@ app.use("/api/revenue", revenueRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/waiters", waiterRoutes);
 
 export default app;
