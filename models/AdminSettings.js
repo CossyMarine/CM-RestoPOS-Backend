@@ -11,6 +11,9 @@ const rewardSettingsSchema = new mongoose.Schema(
     // Minimum points balance a customer must reach before they can redeem
     targetPoints: { type: Number, default: 0 },
     description: { type: String, default: "" },
+    //Assume Table Number
+    assumeTableNumberCustomer: { type: Boolean, default: false },
+    assumeTableNumberWaiter: { type: Boolean, default: false },
   },
   { _id: false }
 );
