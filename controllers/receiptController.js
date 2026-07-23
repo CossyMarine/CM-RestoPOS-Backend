@@ -403,7 +403,10 @@ export const getReceiptsByWaiter = async (req, res) => {
 // @access  Protected
 export const getReceiptById = async (req, res) => {
   try {
-    const receipt = await Receipt.findById(req.params.id);
+    const receipt = await Receipt.findById(req.params.id)
+      .populate("payments.paidBy", "fullName email phone isAdmin role")
+      .populate("pendingManualPayments.paidBy", "fullName email phone isAdmin role")
+      .populate("customer", "fullName email phone role");
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     res.json(receipt);
   } catch (error) {
