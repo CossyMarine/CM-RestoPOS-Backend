@@ -11,6 +11,7 @@ export const generateReceiptForOrder = async (order, { customer } = {}) => {
     { $inc: { seq: 1 } },
     { new: true, upsert: true }
   );
+
   const billId = `#B${counter.seq.toString().padStart(4, "0")}`;
 
   // Attach whichever shift is currently open, so shift summaries
@@ -23,6 +24,10 @@ export const generateReceiptForOrder = async (order, { customer } = {}) => {
     shift: openShift ? openShift._id : null,
     tableNumber: order.tableNumber,
     waiterName: order.waiterName,
+
+    // NEW: Preserve where the order originated
+    source: order.source || "staff",
+
     items: order.items,
     subtotal: order.subtotal,
     customer: customer || order.customer || null,
