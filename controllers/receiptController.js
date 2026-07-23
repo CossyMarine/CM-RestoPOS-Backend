@@ -579,3 +579,62 @@ export const markReceiptPrinted = async (req, res) => {
     res.status(500).json({ message: "Failed to update print status" });
   }
 };
+
+// @desc    Split payment: part cash in hand + part already paid manually to
+//          the till/paybill by the customer. Till portion auto-covers
+//          whatever's left after the cash amount — same "auto-covers the
+//          rest" pattern as the Cash+Prompt split. Staff-only, so no M-Pesa
+//          code / customer name is collected (that's only required on the
+//          customer-facing wallet self-pay flow).
+// @route   PATCH /api/receipts/:id/pay/cash-till
+// @access  Protected — admin
+export const payCashAndTill = async (req, res) => {
+  const { id } = req.params;
+  let { cashAmount } = req.body;
+
+  try {
+    const receipt = await Receipt.findById(id);
+    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
+    if (!["unpaid", "partial"].includes(receipt.status)) {
+      return res.status(400).json({ message: "Receipt is already paid or voided" });
+    }
+
+    const balanceDue = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
+    cashAmount = parseFloat(cashAmount);
+
+    if (isNaN(cashAmount) || cashAmount <= 0) {
+      return res.status(400).json({ message: "Cash amount must be more than 0" });
+    }
+    if (cashAmount >= balanceDue) {
+      return res.status(400).json({
+        message: "Cash amount covers the full balance — use Cash payment instead",
+      });
+    }
+
+    const tillAmount = Number((balanceDue - cashAmount).toFixed(2));
+
+    receipt.status = "paid";
+    receipt.paymentMethod = "both";
+    receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
+    receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
+    receipt.amountPaid = receipt.subtotal;
+    receipt.changeGiven = 0;
+    receipt.paidAt = new Date();
+    receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+    receipt.payments.push(
+      { amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() },
+      { amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() }
+    );
+    await receipt.save();
+
+    await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
+
+    const io = req.app.get("io");
+    io.emit("receipt:paid", receipt);
+
+    res.json({ message: "Payment successful", receipt });
+  } catch (error) {
+    console.error("Error processing cash+till payment:", error.message);
+    res.status(500).json({ message: "Failed to process payment", error: error.message });
+  }
+};
