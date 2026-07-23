@@ -202,12 +202,15 @@ export const createUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    const isDirectWaiter = !isAdmin && role === "waiter";
+
     const user = await User.create({
       fullName,
       password: hashedPassword,
       isAdmin: !!isAdmin,
       role: isAdmin ? "customer" : role,
       [method]: cleanContact,
+      ...(isDirectWaiter && { waiterSince: new Date(), waiterSource: "direct" }),
     });
 
     res.status(201).json({
@@ -220,12 +223,12 @@ export const createUser = async (req, res) => {
   }
 };
 
-// @desc    Get all active waiters
+// @desc    Get all active waiters (excluding those hidden from the ordering selector)
 // @route   GET /api/auth/waiters
 // @access  Protected
 export const getWaiters = async (req, res) => {
   try {
-    const waiters = await User.find({ role: "waiter", isActive: true })
+    const waiters = await User.find({ role: "waiter", isActive: true, hiddenFromSelector: { $ne: true } })
       .select("fullName")
       .sort({ fullName: 1 });
 
@@ -307,8 +310,13 @@ export const updateUserRole = async (req, res) => {
       if (!["kitchen", "waiter", "accountant"].includes(role)) {
         return res.status(400).json({ message: "Choose a role: kitchen, waiter, or accountant" });
       }
+      const becomingWaiter = role === "waiter" && user.role !== "waiter";
       user.isAdmin = false;
       user.role = role;
+      if (becomingWaiter) {
+        user.waiterSince = new Date();
+        user.waiterSource = "promoted";
+      }
     }
 
     await user.save();
