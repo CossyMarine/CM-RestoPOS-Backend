@@ -2,7 +2,7 @@
 import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
 import { stkPush, stkQuery } from "../utils/mpesa.js";
-import { applyPaymentToReceipt } from "../utils/walletPayments.js";
+import { applyPaymentToReceipt, creditCashback } from "../utils/walletPayments.js";
 
 // ============================================================
 // CASH PAYMENT
@@ -44,6 +44,11 @@ export const payReceipt = async (req, res) => {
       paidBy: req.user?._id || null,
       paidAt: new Date(),
     });
+
+    // Cashback is earned on the amount actually applied to the bill, not
+    // the raw cash handed over (change given isn't real revenue).
+    await creditCashback(receipt, balanceDue);
+
     await receipt.save();
 
     await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
@@ -86,6 +91,10 @@ const finalizeMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) => {
     reference: receipt.mpesaReceiptNumber,
     paidAt: new Date(),
   });
+
+  // Cashback on the full amount just settled (cash portion + till portion).
+  await creditCashback(receipt, cashAmount + tillAmount);
+
   await receipt.save();
 
   await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
@@ -660,6 +669,10 @@ export const payCashAndTill = async (req, res) => {
       { amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() },
       { amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() }
     );
+
+    // Cashback on the full balance just settled (cash + till combined).
+    await creditCashback(receipt, cashAmount + tillAmount);
+
     await receipt.save();
 
     await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
