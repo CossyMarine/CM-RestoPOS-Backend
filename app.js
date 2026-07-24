@@ -17,6 +17,7 @@ import walletRoutes from "./routes/walletRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import waiterRoutes from "./routes/waiterRoutes.js";
 import kitchenSettingsRoutes from "./routes/kitchenSettingsRoutes.js";
+import notificationSoundRoutes from "./routes/notificationSoundRoutes.js";
 
 dotenv.config();
 
@@ -67,5 +68,6 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/waiters", waiterRoutes);
 app.use("/api/kitchen-settings", kitchenSettingsRoutes);
+app.use("/api/notification-sounds", notificationSoundRoutes);
 
 export default app;
