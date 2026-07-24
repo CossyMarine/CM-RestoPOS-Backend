@@ -14,10 +14,22 @@ export const createOrder = async (req, res) => {
   }
 
   try {
+    // Snapshot menuItemId/imageUrl if the client sent them — keeps history accurate
+    // even if the menu item's image or name is changed later.
+    const itemsWithSnapshot = items.map((i) => ({
+      menuItemId: i.menuItemId || i._id || null,
+      mealName: i.mealName,
+      imageUrl: i.imageUrl || null,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      lineTotal: i.lineTotal,
+      ready: false,
+    }));
+
     const order = await Order.create({
       tableNumber,
       waiterName,
-      items,
+      items: itemsWithSnapshot,
       subtotal,
       source: "staff",
     });
@@ -60,7 +72,11 @@ export const updateOrderStatus = async (req, res) => {
   }
 
   try {
-    const order = await Order.findByIdAndUpdate(id, { status }, { new: true });
+    const update = { status };
+    if (status === "completed") update.servedAt = new Date();
+    if (status === "cancelled") update.cancelledAt = new Date();
+
+    const order = await Order.findByIdAndUpdate(id, update, { new: true });
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
@@ -73,6 +89,35 @@ export const updateOrderStatus = async (req, res) => {
   } catch (error) {
     console.error("Error updating order status:", error.message);
     res.status(500).json({ message: "Failed to update order status", error: error.message });
+  }
+};
+
+// @desc    Toggle a single item's "ready" state on a pending order (kitchen check-off)
+// @route   PATCH /api/orders/:id/items/:itemIndex/ready
+// @access  Protected — kitchen, manager, admin
+export const toggleItemReady = async (req, res) => {
+  const { id, itemIndex } = req.params;
+  const { ready } = req.body;
+
+  try {
+    const order = await Order.findById(id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    const idx = Number(itemIndex);
+    if (!order.items[idx]) {
+      return res.status(400).json({ message: "Item not found on this order" });
+    }
+
+    order.items[idx].ready = ready !== undefined ? !!ready : !order.items[idx].ready;
+    await order.save();
+
+    const io = req.app.get("io");
+    io.emit("order:updated", order);
+
+    res.json(order);
+  } catch (error) {
+    console.error("Error toggling item ready state:", error.message);
+    res.status(500).json({ message: "Failed to update item", error: error.message });
   }
 };
 
@@ -106,5 +151,100 @@ export const assignOrderWaiter = async (req, res) => {
   } catch (error) {
     console.error("Error assigning order:", error.message);
     res.status(500).json({ message: "Failed to assign order", error: error.message });
+  }
+};
+
+// @desc    Kitchen order history — filterable, searchable, paginated.
+//          Includes every status so completed/cancelled tickets stay visible.
+// @route   GET /api/orders/history?page=1&limit=25&status=&waiterName=&tableNumber=&search=&startDate=&endDate=
+// @access  Protected — kitchen, manager, admin
+export const getOrderHistory = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 25));
+
+    const query = {};
+
+    if (req.query.status) query.status = req.query.status;
+    if (req.query.waiterName) query.waiterName = new RegExp(req.query.waiterName, "i");
+    if (req.query.tableNumber) query.tableNumber = req.query.tableNumber;
+
+    if (req.query.startDate || req.query.endDate) {
+      query.createdAt = {};
+      if (req.query.startDate) query.createdAt.$gte = new Date(req.query.startDate);
+      if (req.query.endDate) {
+        // Treat endDate as inclusive of the whole day
+        const end = new Date(req.query.endDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+
+    if (req.query.search) {
+      const re = new RegExp(req.query.search, "i");
+      query.$or = [
+        { waiterName: re },
+        { customerName: re },
+        { "items.mealName": re },
+        { tableNumber: re },
+      ];
+    }
+
+    const total = await Order.countDocuments(query);
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    // Attach prep duration in seconds where we can compute it
+    const withDuration = orders.map((o) => ({
+      ...o,
+      prepSeconds:
+        o.servedAt && o.createdAt
+          ? Math.round((new Date(o.servedAt) - new Date(o.createdAt)) / 1000)
+          : null,
+    }));
+
+    res.json({
+      orders: withDuration,
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  } catch (error) {
+    console.error("Error fetching order history:", error.message);
+    res.status(500).json({ message: "Failed to fetch order history", error: error.message });
+  }
+};
+
+// @desc    Kitchen stats — orders served today + average prep time today
+// @route   GET /api/orders/kitchen/stats
+// @access  Protected — kitchen, manager, admin
+export const getKitchenStats = async (req, res) => {
+  try {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const servedToday = await Order.find({
+      status: "completed",
+      servedAt: { $gte: startOfDay },
+    }).select("createdAt servedAt").lean();
+
+    const count = servedToday.length;
+    const avgPrepSeconds = count
+      ? Math.round(
+          servedToday.reduce(
+            (sum, o) => sum + (new Date(o.servedAt) - new Date(o.createdAt)) / 1000,
+            0
+          ) / count
+        )
+      : 0;
+
+    res.json({ servedToday: count, avgPrepSeconds });
+  } catch (error) {
+    console.error("Error fetching kitchen stats:", error.message);
+    res.status(500).json({ message: "Failed to fetch kitchen stats", error: error.message });
   }
 };
