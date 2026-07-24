@@ -24,4 +24,21 @@ export const uploadMenuImage = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
+// ── Kitchen notification sound storage ──────────────────────────
+// Cloudinary files audio under the "video" resource type — there's no
+// separate "audio" bucket. Keep that in mind for destroy() calls too.
+const notificationSoundStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder:          "restopos/notification-sounds",
+    resource_type:   "video",
+    allowed_formats:  ["mp3", "wav", "ogg", "m4a"],
+  },
+});
+
+export const uploadNotificationSound = multer({
+  storage: notificationSoundStorage,
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB — plenty for a short alert clip
+});
+
 export { cloudinary };
