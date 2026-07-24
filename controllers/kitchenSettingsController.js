@@ -1,5 +1,6 @@
 // controllers/kitchenSettingsController.js
 import KitchenSettings from "../models/KitchenSettings.js";
+import NotificationSound from "../models/NotificationSound.js";
 
 // @desc    Get kitchen display settings
 // @route   GET /api/kitchen-settings
@@ -25,6 +26,7 @@ export const updateKitchenSettings = async (req, res) => {
     soundEnabled,
     lateThresholdMinutes,
     criticalThresholdMinutes,
+    notificationSoundId, // string id from the library, or null/"" to clear
   } = req.body;
 
   try {
@@ -35,6 +37,23 @@ export const updateKitchenSettings = async (req, res) => {
     if (soundEnabled !== undefined) settings.soundEnabled = soundEnabled;
     if (lateThresholdMinutes !== undefined) settings.lateThresholdMinutes = lateThresholdMinutes;
     if (criticalThresholdMinutes !== undefined) settings.criticalThresholdMinutes = criticalThresholdMinutes;
+
+    if (notificationSoundId !== undefined) {
+      if (!notificationSoundId) {
+        settings.notificationSoundId = null;
+        settings.notificationSoundUrl = null;
+        settings.notificationSoundName = null;
+      } else {
+        const sound = await NotificationSound.findById(notificationSoundId);
+        if (!sound) {
+          return res.status(404).json({ message: "Notification sound not found" });
+        }
+        settings.notificationSoundId = sound._id;
+        settings.notificationSoundUrl = sound.url;
+        settings.notificationSoundName = sound.name;
+      }
+    }
+
     await settings.save();
 
     const io = req.app.get("io");
