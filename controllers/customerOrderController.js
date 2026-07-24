@@ -13,13 +13,14 @@ export const createCustomerOrder = async (req, res) => {
   if (!items || items.length === 0) return res.status(400).json({ message: "Cart is empty" });
 
   try {
-    // Compute lineTotal server-side so the Order model's required field is always
-    // satisfied, regardless of what the client sends.
     const itemsWithTotals = items.map((i) => ({
+      menuItemId: i.menuItemId || i.id || null,
       mealName: i.mealName,
+      imageUrl: i.imageUrl || null,
       quantity: i.quantity,
       unitPrice: i.unitPrice,
       lineTotal: i.quantity * i.unitPrice,
+      ready: false,
     }));
 
     const subtotal = itemsWithTotals.reduce((sum, i) => sum + i.lineTotal, 0);
@@ -109,6 +110,7 @@ export const cancelCustomerOrder = async (req, res) => {
     }
 
     order.status = "cancelled";
+    order.cancelledAt = new Date();
     await order.save();
 
     const io = req.app.get("io");
