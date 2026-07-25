@@ -6,8 +6,9 @@ import {
   addPettyCash,
   getShiftSummary,
   closeShift,
+  getShiftHistory,
 } from "../controllers/shiftController.js";
-import { protect } from "../Middlewares/authMiddleware.js";
+import { protect, authorize } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
@@ -16,5 +17,8 @@ router.get("/current", protect, getCurrentShift);
 router.post("/:id/petty-cash", protect, addPettyCash);
 router.get("/:id/summary", protect, getShiftSummary);
 router.post("/:id/close", protect, closeShift);
+
+// Admin — Accountant Management shift log
+router.get("/history/:userId", protect, authorize("admin"), getShiftHistory);
 
 export default router;
