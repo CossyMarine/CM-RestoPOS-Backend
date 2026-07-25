@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
 import VoidRequest from "../models/VoidRequest.js";
+import Shift from "../models/Shift.js";
 
 function getDateRanges() {
   const now = new Date();
@@ -95,11 +96,29 @@ export const getWaiterDetail = async (req, res) => {
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
 
     const recentBills = await Receipt.find({ waiterName: waiter.fullName }).sort({ createdAt: -1 }).limit(50);
+    const shiftHistory = await Shift.find({ openedBy: waiter._id }).sort({ createdAt: -1 }).limit(30);
+
+    const orderCount = await Order.countDocuments({ waiterName: waiter.fullName });
+    const totalSales = await Receipt.aggregate([
+      { $match: { waiterName: waiter.fullName, status: "paid" } },
+      { $group: { _id: null, sum: { $sum: "$subtotal" } } },
+    ]);
+    const voidCount = await VoidRequest.countDocuments(); // filtered below via receipt lookup for accuracy
+    const voidAgg = await VoidRequest.aggregate([
+      { $lookup: { from: "receipts", localField: "receipt", foreignField: "_id", as: "r" } },
+      { $unwind: "$r" },
+      { $match: { "r.waiterName": waiter.fullName, status: "approved" } },
+      { $count: "count" },
+    ]);
 
     res.json({
       id: waiter._id, fullName: waiter.fullName, email: waiter.email, phone: waiter.phone,
       isActive: waiter.isActive, waiterSince: waiter.waiterSince || waiter.createdAt,
-      waiterSource: waiter.waiterSource || "direct", recentBills,
+      waiterSource: waiter.waiterSource || "direct",
+      totalOrders: orderCount,
+      totalSales: totalSales[0]?.sum || 0,
+      totalVoids: voidAgg[0]?.count || 0,
+      recentBills, shiftHistory,
     });
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch waiter detail" });
