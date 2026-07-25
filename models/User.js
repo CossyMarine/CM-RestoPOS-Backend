@@ -39,6 +39,22 @@ const userSchema = new mongoose.Schema(
 
     isActive: { type: Boolean, default: true },
 
+        // ---- Granular module access (role: "accountant" only) ----
+    // Payments, Orders & Receipts, and Void Requests are visible by default —
+    // they're the core of the accountant job. Everything else is hidden
+    // until an admin explicitly grants it from Accountant Management.
+    permissions: {
+      inventory: { type: Boolean, default: false },
+      manageMenu: { type: Boolean, default: false },
+      ordersReceipts: { type: Boolean, default: true },
+      voidRequests: { type: Boolean, default: true },
+      users: { type: Boolean, default: false },
+      settings: { type: Boolean, default: false },
+      waiterManagement: { type: Boolean, default: false },
+      kitchen: { type: Boolean, default: false },
+      payments: { type: Boolean, default: true },
+    },
+
     // Reward/cashback points balance — only meaningful for role: "customer"
     walletPoints: { type: Number, default: 0 },
 
