@@ -132,7 +132,7 @@ export const getReceiptHistory = async (req, res) => {
     const q = (req.query.q || "").trim();
     const { from, to } = req.query;
 
-    const filter = { ...excludeUnclaimedOnline };
+    const filter = {};
     if (q) {
       const orClauses = [
         { billId: { $regex: q, $options: "i" } },
@@ -141,10 +141,7 @@ export const getReceiptHistory = async (req, res) => {
       orClauses.push(
         isNaN(q) ? { tableNumber: { $regex: q, $options: "i" } } : { tableNumber: q }
       );
-      // filter already has $or from excludeUnclaimedOnline — combine with $and
-      filter.$and = [{ $or: orClauses }];
-      delete filter.$or;
-      filter.$and.push({ $or: excludeUnclaimedOnline.$or });
+      filter.$or = orClauses;
     }
     if (from || to) {
       filter.createdAt = {};
