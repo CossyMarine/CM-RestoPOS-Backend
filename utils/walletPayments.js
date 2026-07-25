@@ -128,3 +128,10 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
 
   return { receipt, pointsUsed, kesApplied: amountToApply };
 };
+
+// NEW — moved out of walletController.js so other controllers can reuse it
+export const findCustomerByIdentifier = (identifier) =>
+  User.findOne({
+    $or: [{ email: identifier.toLowerCase().trim() }, { phone: identifier.trim() }],
+    role: "customer",
+  });
