@@ -6,18 +6,13 @@ import {
   approveVoidRequest,
   rejectVoidRequest,
 } from "../controllers/voidRequestController.js";
-import { protect, authorize } from "../Middlewares/authMiddleware.js";
+import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", protect, authorize("admin"), getVoidRequests);
-router.post(
-  "/",
-  protect,
-  authorize("waiter", "manager", "cashier", "admin"),
-  createVoidRequest
-);
-router.patch("/:id/approve", protect, authorize("admin"), approveVoidRequest);
-router.patch("/:id/reject", protect, authorize("admin"), rejectVoidRequest);
+router.get("/", protect, authorize("admin", "accountant"), requirePermission("voidRequests"), getVoidRequests);
+router.post("/", protect, authorize("waiter", "manager", "cashier", "admin"), createVoidRequest);
+router.patch("/:id/approve", protect, authorize("admin", "accountant"), requirePermission("voidRequests"), approveVoidRequest);
+router.patch("/:id/reject", protect, authorize("admin", "accountant"), requirePermission("voidRequests"), rejectVoidRequest);
 
 export default router;
