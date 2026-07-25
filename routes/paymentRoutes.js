@@ -7,7 +7,7 @@ import {
   confirmManualPayment,
   rejectManualPayment,
 } from "../controllers/paymentController.js";
-import { protect, authorize } from "../Middlewares/authMiddleware.js";
+import { protect, authorize, requirePermission, requireOpenShift } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
@@ -15,7 +15,7 @@ router.get("/transactions", protect, authorize("admin", "accountant"), getTransa
 router.get("/pending", protect, authorize("admin", "accountant"), getPendingManualPayments);
 router.get("/pending/count", protect, authorize("admin", "accountant"), getPendingManualPaymentsCount);
 
-router.patch("/pending/:receiptId/:paymentId/confirm", protect, authorize("admin"), confirmManualPayment);
-router.patch("/pending/:receiptId/:paymentId/reject", protect, authorize("admin"), rejectManualPayment);
+router.patch("/pending/:receiptId/:paymentId/confirm", protect, authorize("admin", "accountant"), requirePermission("payments"), requireOpenShift, confirmManualPayment);
+router.patch("/pending/:receiptId/:paymentId/reject", protect, authorize("admin", "accountant"), requirePermission("payments"), rejectManualPayment);
 
 export default router;
