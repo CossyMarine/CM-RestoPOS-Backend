@@ -18,7 +18,7 @@ const gated = [authorize("admin", "kitchen", "accountant"), requirePermission("i
 // Simplest fix: give requirePermission a pass-through for any role that
 // isn't "accountant" (kitchen keeps working, accountant gets gated).
 
-router.get("/units", protect, authorize("admin"), requirePermission("inventory"), getUnits);
+router.get("/units", protect, authorize("admin", "accountant"), requirePermission("inventory"), getUnits);
 router.post("/units", protect, authorize("admin"), requirePermission("inventory"), createUnit);
 router.delete("/units/:id", protect, authorize("admin"), requirePermission("inventory"), deleteUnit);
 
@@ -27,7 +27,7 @@ router.post("/items", protect, authorize("admin"), requirePermission("inventory"
 router.put("/items/:id", protect, authorize("admin"), requirePermission("inventory"), updateItem);
 router.delete("/items/:id", protect, authorize("admin"), requirePermission("inventory"), deleteItem);
 
-router.get("/stock", protect, authorize("admin"), requirePermission("inventory"), getStockHistory);
+router.get("/stock", protect, authorize("admin", "accountant"), requirePermission("inventory"), getStockHistory);
 router.post("/stock", protect, authorize("admin"), requirePermission("inventory"), addStock);
 
 router.get("/usage/overview", protect, authorize("admin", "kitchen", "accountant"), requirePermission("inventory"), getUsageOverview);
@@ -36,6 +36,6 @@ router.get("/usage", protect, authorize("admin"), requirePermission("inventory")
 router.post("/usage", protect, authorize("admin", "kitchen"), logUsage);
 router.post("/adjust", protect, authorize("admin"), requirePermission("inventory"), adjustStock);
 
-router.get("/summary", protect, authorize("admin"), requirePermission("inventory"), getInventorySummary);
+router.get("/summary", protect, authorize("admin", "accountant"), requirePermission("inventory"), getInventorySummary);
 
 export default router;
