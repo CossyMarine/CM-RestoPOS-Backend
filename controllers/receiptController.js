@@ -1,8 +1,29 @@
 // controllers/receiptController.js
 import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
+import AdminSettings from "../models/AdminSettings.js";
 import { stkPush, stkQuery } from "../utils/mpesa.js";
-import { applyPaymentToReceipt, creditCashback } from "../utils/walletPayments.js";
+import {
+  applyPaymentToReceipt,
+  applyRewardRedemption,
+  creditCashback,
+  findCustomerByIdentifier,
+} from "../utils/walletPayments.js";
+
+// ---- split out into controllers/receipt/*, re-exported so routes/receiptRoutes.js
+//      doesn't need to change its import path ----
+export {
+  getReceipts,
+  getPaidReceipts,
+  getPendingOnlineReceipts,
+  getReceiptsTodaySummary,
+  getReceiptsByWaiter,
+  getReceiptById,
+  getReceiptHistory,
+  getReceiptHistoryByWaiter,
+} from "./receipt/receiptQueries.js";
+
+export { addItemsToReceipt, markReceiptPrinted } from "./receipt/receiptManagement.js";
 
 // ============================================================
 // CASH PAYMENT
@@ -18,6 +39,7 @@ export const payReceipt = async (req, res) => {
   try {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
+    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
     if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
@@ -158,6 +180,7 @@ export const initiateMpesaPayment = async (req, res) => {
   try {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
+    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
     if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
@@ -328,302 +351,6 @@ export const cancelMpesaPayment = async (req, res) => {
   }
 };
 
-// ============================================================
-// LISTS / HISTORY / SUMMARY
-// ============================================================
-
-// Online orders that no waiter has claimed yet shouldn't clutter the
-// normal admin tabs — they live in the "Pending Online" tab instead
-// until a waiter (or admin) assigns themselves via /orders/:id/assign.
-const excludeUnclaimedOnline = {
-  $or: [{ source: { $ne: "online" } }, { waiterName: { $ne: null } }],
-};
-
-// @desc    Get all unpaid or partially-paid receipts
-// @route   GET /api/receipts
-// @access  Protected — admin
-export const getReceipts = async (req, res) => {
-  try {
-    const receipts = await Receipt.find({
-      status: { $in: ["unpaid", "partial"] },
-      ...excludeUnclaimedOnline,
-    }).sort({ createdAt: -1 });
-    res.json(receipts);
-  } catch (error) {
-    console.error("Error fetching receipts:", error.message);
-    res.status(500).json({ message: "Failed to fetch receipts" });
-  }
-};
-
-// @desc    Get paid receipts (most recent first) — accountant view
-// @route   GET /api/receipts/paid
-// @access  Protected — admin, accountant
-export const getPaidReceipts = async (req, res) => {
-  try {
-    const receipts = await Receipt.find({
-      status: "paid",
-      ...excludeUnclaimedOnline,
-    }).sort({ paidAt: -1 }).limit(200);
-    res.json(receipts);
-  } catch (error) {
-    console.error("Error fetching paid receipts:", error.message);
-    res.status(500).json({ message: "Failed to fetch paid receipts" });
-  }
-};
-
-// @desc    Online orders placed by customers that no waiter has claimed yet
-// @route   GET /api/receipts/online-pending
-// @access  Protected — admin
-export const getPendingOnlineReceipts = async (req, res) => {
-  try {
-    const receipts = await Receipt.find({
-      source: "online",
-      waiterName: null,
-    }).sort({ createdAt: 1 });
-    res.json(receipts);
-  } catch (error) {
-    console.error("Error fetching pending online receipts:", error.message);
-    res.status(500).json({ message: "Failed to fetch pending online receipts" });
-  }
-};
-
-// @desc    Today's paid vs unpaid totals — powers the "All" tab summary bar
-// @route   GET /api/receipts/summary/today
-// @access  Protected — admin, accountant
-export const getReceiptsTodaySummary = async (req, res) => {
-  try {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const [paidAgg, unpaidAgg] = await Promise.all([
-      Receipt.aggregate([
-        { $match: { status: "paid", paidAt: { $gte: startOfDay, $lte: endOfDay } } },
-        { $group: { _id: null, total: { $sum: "$subtotal" }, count: { $sum: 1 } } },
-      ]),
-      Receipt.aggregate([
-        { $match: { status: { $in: ["unpaid", "partial"] }, createdAt: { $gte: startOfDay, $lte: endOfDay } } },
-        { $group: { _id: null, total: { $sum: "$subtotal" }, count: { $sum: 1 } } },
-      ]),
-    ]);
-
-    res.json({
-      paidToday: paidAgg[0]?.total || 0,
-      paidTodayCount: paidAgg[0]?.count || 0,
-      unpaidToday: unpaidAgg[0]?.total || 0,
-      unpaidTodayCount: unpaidAgg[0]?.count || 0,
-    });
-  } catch (error) {
-    console.error("Error fetching today's summary:", error.message);
-    res.status(500).json({ message: "Failed to fetch summary" });
-  }
-};
-
-// @desc    Get unpaid/partial receipts for a specific waiter
-// @route   GET /api/receipts/waiter/:name
-// @access  Protected
-export const getReceiptsByWaiter = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const receipts = await Receipt.find({ waiterName: name, status: { $in: ["unpaid", "partial"] } }).sort({
-      createdAt: -1,
-    });
-    res.json(receipts);
-  } catch (error) {
-    console.error("Error fetching receipts by waiter:", error.message);
-    res.status(500).json({ message: "Failed to fetch receipts" });
-  }
-};
-
-// @desc    Get a single receipt (used for print / add-items refresh)
-// @route   GET /api/receipts/:id
-// @access  Protected
-export const getReceiptById = async (req, res) => {
-  try {
-    const receipt = await Receipt.findById(req.params.id)
-      .populate("payments.paidBy", "fullName email phone isAdmin role")
-      .populate("pendingManualPayments.paidBy", "fullName email phone isAdmin role")
-      .populate("customer", "fullName email phone role");
-    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    res.json(receipt);
-  } catch (error) {
-    console.error("Error fetching receipt:", error.message);
-    res.status(500).json({ message: "Failed to fetch receipt" });
-  }
-};
-
-// @desc    Paginated bill history across ALL waiters, every status, newest first.
-// @route   GET /api/receipts/history?page=1&limit=10&q=search&from=ISO&to=ISO
-// @access  Protected
-export const getReceiptHistory = async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.max(1, parseInt(req.query.limit) || 10);
-    const q = (req.query.q || "").trim();
-    const { from, to } = req.query;
-
-    const filter = { ...excludeUnclaimedOnline };
-    if (q) {
-      const orClauses = [
-        { billId: { $regex: q, $options: "i" } },
-        { waiterName: { $regex: q, $options: "i" } },
-      ];
-      orClauses.push(
-        isNaN(q) ? { tableNumber: { $regex: q, $options: "i" } } : { tableNumber: q }
-      );
-      // filter already has $or from excludeUnclaimedOnline — combine with $and
-      filter.$and = [{ $or: orClauses }];
-      delete filter.$or;
-      filter.$and.push({ $or: excludeUnclaimedOnline.$or });
-    }
-    if (from || to) {
-      filter.createdAt = {};
-      if (from) filter.createdAt.$gte = new Date(from);
-      if (to) filter.createdAt.$lte = new Date(to);
-    }
-
-    const total = await Receipt.countDocuments(filter);
-    const receipts = await Receipt.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
-
-    res.json({
-      receipts,
-      page,
-      limit,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
-    });
-  } catch (error) {
-    console.error("Error fetching bill history:", error.message);
-    res.status(500).json({ message: "Failed to fetch bill history" });
-  }
-};
-
-// @desc    Paginated bill history for one waiter, every status, newest first
-// @route   GET /api/receipts/waiter/:name/history?page=1&limit=4&q=search&from=ISO&to=ISO
-// @access  Protected
-export const getReceiptHistoryByWaiter = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.max(1, parseInt(req.query.limit) || 4);
-    const q = (req.query.q || "").trim();
-    const { from, to } = req.query;
-
-    const filter = { waiterName: name };
-    if (q) {
-      const orClauses = [{ billId: { $regex: q, $options: "i" } }];
-      orClauses.push(
-        isNaN(q) ? { tableNumber: { $regex: q, $options: "i" } } : { tableNumber: q }
-      );
-      filter.$or = orClauses;
-    }
-    if (from || to) {
-      filter.createdAt = {};
-      if (from) filter.createdAt.$gte = new Date(from);
-      if (to) filter.createdAt.$lte = new Date(to);
-    }
-
-    const total = await Receipt.countDocuments(filter);
-    const receipts = await Receipt.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
-
-    res.json({
-      receipts,
-      page,
-      limit,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
-    });
-  } catch (error) {
-    console.error("Error fetching bill history:", error.message);
-    res.status(500).json({ message: "Failed to fetch bill history" });
-  }
-};
-
-// @desc    Add items to an unpaid bill (customer wants to order more before paying)
-// @route   PATCH /api/receipts/:id/items
-// @access  Protected — waiter, manager, admin, cashier
-export const addItemsToReceipt = async (req, res) => {
-  const { id } = req.params;
-  const { items } = req.body;
-
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ message: "At least one item is required" });
-  }
-
-  try {
-    const receipt = await Receipt.findById(id);
-    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    if (receipt.status !== "unpaid") {
-      return res.status(400).json({ message: "Only unpaid bills can be added to" });
-    }
-
-    const merged = [...receipt.items];
-    items.forEach((incoming) => {
-      const lineTotal = incoming.quantity * incoming.unitPrice;
-      const existing = merged.find(
-        (i) => i.mealName === incoming.mealName && i.unitPrice === incoming.unitPrice
-      );
-      if (existing) {
-        existing.quantity += incoming.quantity;
-        existing.lineTotal += lineTotal;
-      } else {
-        merged.push({
-          mealName: incoming.mealName,
-          quantity: incoming.quantity,
-          unitPrice: incoming.unitPrice,
-          lineTotal,
-        });
-      }
-    });
-
-    const subtotal = merged.reduce((sum, i) => sum + i.lineTotal, 0);
-
-    receipt.items = merged;
-    receipt.subtotal = subtotal;
-    await receipt.save();
-
-    const order = await Order.findByIdAndUpdate(
-      receipt.order,
-      { items: merged, subtotal },
-      { new: true }
-    );
-
-    const io = req.app.get("io");
-    io.emit("receipt:updated", receipt);
-    if (order) io.emit("order:updated", order);
-
-    res.json(receipt);
-  } catch (error) {
-    console.error("Error adding items to receipt:", error.message);
-    res.status(500).json({ message: "Failed to add items", error: error.message });
-  }
-};
-
-// @desc    Record that a receipt was (re)printed
-// @route   PATCH /api/receipts/:id/print
-// @access  Protected
-export const markReceiptPrinted = async (req, res) => {
-  try {
-    const receipt = await Receipt.findByIdAndUpdate(
-      req.params.id,
-      { $inc: { printCount: 1 }, $set: { printedAt: new Date() } },
-      { new: true }
-    );
-    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    res.json(receipt);
-  } catch (error) {
-    console.error("Error marking receipt printed:", error.message);
-    res.status(500).json({ message: "Failed to update print status" });
-  }
-};
-
 // @desc    Split payment: part cash in hand + part already paid manually to
 //          the till/paybill by the customer. Till portion auto-covers
 //          whatever's left after the cash amount — same "auto-covers the
@@ -639,6 +366,7 @@ export const payCashAndTill = async (req, res) => {
   try {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
+    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
     if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
@@ -684,5 +412,111 @@ export const payCashAndTill = async (req, res) => {
   } catch (error) {
     console.error("Error processing cash+till payment:", error.message);
     res.status(500).json({ message: "Failed to process payment", error: error.message });
+  }
+};
+
+// ============================================================
+// COMBO PAYMENT — cash + till + reward in one action
+// ============================================================
+
+// @desc    Apply any mix of cash, manual-till, and a customer's reward
+//          points to a bill in a single call. Any leftover balance (e.g.
+//          the rest is going on M-Pesa prompt) is left due — call
+//          POST /:id/mpesa/initiate next for that remainder.
+// @route   PATCH /api/receipts/:id/pay/combo
+// @access  Protected — admin, accountant (payments permission + open shift)
+export const payCombo = async (req, res) => {
+  const { id } = req.params;
+  let { cashAmount, tillAmount, rewardIdentifier, rewardAmount } = req.body;
+
+  cashAmount = parseFloat(cashAmount) || 0;
+  tillAmount = parseFloat(tillAmount) || 0;
+  rewardAmount = parseFloat(rewardAmount) || 0;
+
+  if (cashAmount < 0 || tillAmount < 0 || rewardAmount < 0) {
+    return res.status(400).json({ message: "Amounts cannot be negative" });
+  }
+  if (cashAmount === 0 && tillAmount === 0 && rewardAmount === 0) {
+    return res.status(400).json({ message: "Enter at least one amount" });
+  }
+
+  try {
+    const receipt = await Receipt.findById(id);
+    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
+    if (!["unpaid", "partial"].includes(receipt.status)) {
+      return res.status(400).json({ message: "Receipt is already paid or voided" });
+    }
+    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
+
+    const balanceBefore = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
+    if (cashAmount + tillAmount + rewardAmount - balanceBefore > 0.01) {
+      return res.status(400).json({ message: "Combined amount cannot exceed the balance due" });
+    }
+
+    const io = req.app.get("io");
+
+    // ---- Reward leg first — needs the customer's own points balance ----
+    if (rewardAmount > 0) {
+      if (!rewardIdentifier || !rewardIdentifier.trim()) {
+        return res.status(400).json({ message: "Customer email or phone is required to redeem reward points" });
+      }
+      const customer = await findCustomerByIdentifier(rewardIdentifier);
+      if (!customer) {
+        return res.status(404).json({ message: "No registered customer found with that email or phone" });
+      }
+      const settings = await AdminSettings.getSettings();
+      const pointValue = settings.reward.pointValueKes || 1;
+      const pointsToRedeem = Math.ceil(rewardAmount / pointValue);
+      if (pointsToRedeem > (customer.walletPoints || 0)) {
+        return res.status(400).json({
+          message: `${customer.fullName} only has ${customer.walletPoints} points available`,
+        });
+      }
+      await applyRewardRedemption({ receipt, user: customer, pointsToRedeem, io });
+      // applyRewardRedemption already saved the receipt — keep working off
+      // the same in-memory doc, it's up to date.
+    }
+
+    // ---- Cash / till legs ----
+    if (cashAmount > 0) {
+      receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
+      receipt.payments.push({ amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() });
+      await creditCashback(receipt, cashAmount);
+    }
+    if (tillAmount > 0) {
+      receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
+      receipt.payments.push({ amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() });
+      await creditCashback(receipt, tillAmount);
+    }
+
+    if (cashAmount > 0 || tillAmount > 0) {
+      const totalPaid = receipt.payments.reduce((sum, p) => sum + p.amount, 0);
+      receipt.amountPaid = Number(totalPaid.toFixed(2));
+      receipt.paymentMethod = receipt.payments.length > 1 ? "both" : cashAmount > 0 ? "cash" : "manual_till";
+      receipt.status = totalPaid >= receipt.subtotal ? "paid" : "partial";
+      if (receipt.status === "paid") receipt.paidAt = new Date();
+      receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+      await receipt.save();
+    }
+
+    if (receipt.status === "paid") {
+      await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
+    }
+
+    if (io) {
+      io.emit("receipt:updated", receipt);
+      if (receipt.status === "paid") io.emit("receipt:paid", receipt);
+    }
+
+    const balanceRemaining = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
+
+    res.json({
+      message: receipt.status === "paid" ? "Payment complete" : `Applied — KES ${balanceRemaining.toLocaleString()} still due`,
+      receipt,
+      balanceRemaining,
+    });
+  } catch (error) {
+    console.error("Error processing combo payment:", error.message);
+    res.status(400).json({ message: error.message || "Failed to process payment" });
   }
 };
