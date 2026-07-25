@@ -1,6 +1,7 @@
 // middlewares/authMiddleware.js
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import Shift from "../models/Shift.js";
 
 // Protect routes — reads the httpOnly cookie set on login
 export const protect = async (req, res, next) => {
@@ -51,4 +52,29 @@ export const authorize = (...allowedRoles) => {
     }
     return res.status(403).json({ message: "Insufficient permissions" });
   };
+};
+
+// Gate a route behind one of an accountant's toggleable permissions.
+// Admins always pass — permissions only apply to role: "accountant".
+export const requirePermission = (key) => (req, res, next) => {
+  if (!req.user) return res.status(403).json({ message: "Insufficient permissions" });
+  if (req.user.isAdmin) return next();
+  if (req.user.permissions?.[key]) return next();
+  return res.status(403).json({ message: "You don't have access to this section" });
+};
+
+// Blocks payment-processing routes unless the accountant has an open shift.
+// Admins bypass this — they aren't shift-gated.
+export const requireOpenShift = async (req, res, next) => {
+  if (req.user?.isAdmin) return next();
+  try {
+    const shift = await Shift.findOne({ openedBy: req.user._id, status: "open" });
+    if (!shift) {
+      return res.status(403).json({ message: "Open your shift before processing payments." });
+    }
+    req.shift = shift; // handy for controllers to stamp receipt.shift
+    next();
+  } catch (error) {
+    res.status(500).json({ message: "Failed to verify shift status", error: error.message });
+  }
 };
