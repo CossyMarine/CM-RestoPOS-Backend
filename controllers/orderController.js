@@ -14,8 +14,19 @@ export const createOrder = async (req, res) => {
   }
 
   try {
-    // Snapshot menuItemId/imageUrl if the client sent them — keeps history accurate
-    // even if the menu item's image or name is changed later.
+    // Shift gate — only enforced when the order is attributed to a named waiter.
+    if (waiterName) {
+      const waiterUser = await User.findOne({ fullName: waiterName, role: "waiter" }).select("_id");
+      if (waiterUser) {
+        const openShift = await Shift.findOne({ openedBy: waiterUser._id, status: "open" });
+        if (!openShift) {
+          return res.status(403).json({
+            message: `${waiterName}'s shift is closed. Open their shift in Settings before taking orders.`,
+          });
+        }
+      }
+    }
+
     const itemsWithSnapshot = items.map((i) => ({
       menuItemId: i.menuItemId || i._id || null,
       mealName: i.mealName,
@@ -45,6 +56,7 @@ export const createOrder = async (req, res) => {
     res.status(500).json({ message: "Failed to create order", error: error.message });
   }
 };
+
 
 // @desc    Get all orders the kitchen hasn't finished
 // @route   GET /api/orders/pending
