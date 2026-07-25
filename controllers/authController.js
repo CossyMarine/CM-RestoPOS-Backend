@@ -30,6 +30,7 @@ const publicUser = (user) => ({
   phone: user.phone || null,
   isAdmin: user.isAdmin,
   role: user.role,
+  permissions: user.role === "accountant" ? user.permissions : undefined,
 });
 
 // Fuller shape for the admin Users panel — includes status + join date
