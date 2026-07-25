@@ -4,7 +4,9 @@ import PettyCash from "../models/PettyCash.js";
 import Receipt from "../models/Receipt.js";
 import VoidRequest from "../models/VoidRequest.js";
 
-// @desc    Open a new till shift
+// @desc    Open a shift for the logged-in user. Each staff member (accountant,
+//          waiter, etc.) has their own shift now — the uniqueness check is
+//          scoped per-user, not restaurant-wide.
 // @route   POST /api/shifts/open
 // @access  Protected
 export const openShift = async (req, res) => {
@@ -16,9 +18,9 @@ export const openShift = async (req, res) => {
   }
 
   try {
-    const existing = await Shift.findOne({ status: "open" });
+    const existing = await Shift.findOne({ openedBy, status: "open" });
     if (existing) {
-      return res.status(400).json({ message: "A shift is already open", shift: existing });
+      return res.status(400).json({ message: "You already have a shift open", shift: existing });
     }
 
     const shift = await Shift.create({ openedBy, openingFloat });
@@ -33,12 +35,12 @@ export const openShift = async (req, res) => {
   }
 };
 
-// @desc    Get the currently open shift, or null — shared till, not per-cashier
+// @desc    Get the logged-in user's own open shift, or null
 // @route   GET /api/shifts/current
 // @access  Protected
 export const getCurrentShift = async (req, res) => {
   try {
-    const shift = await Shift.findOne({ status: "open" }).populate("openedBy", "fullName");
+    const shift = await Shift.findOne({ openedBy: req.user._id, status: "open" }).populate("openedBy", "fullName");
     res.json(shift);
   } catch (error) {
     console.error("Error fetching current shift:", error.message);
@@ -46,7 +48,7 @@ export const getCurrentShift = async (req, res) => {
   }
 };
 
-// @desc    Log a petty cash out-payment against an open shift
+// @desc    Log a petty cash out-payment against an open shift (must be yours, unless admin)
 // @route   POST /api/shifts/:id/petty-cash
 // @access  Protected
 export const addPettyCash = async (req, res) => {
@@ -64,16 +66,14 @@ export const addPettyCash = async (req, res) => {
   try {
     const shift = await Shift.findById(id);
     if (!shift) return res.status(404).json({ message: "Shift not found" });
+    if (!req.user.isAdmin && String(shift.openedBy) !== String(req.user._id)) {
+      return res.status(403).json({ message: "This isn't your shift" });
+    }
     if (shift.status !== "open") {
       return res.status(400).json({ message: "Cannot log petty cash against a closed shift" });
     }
 
-    const entry = await PettyCash.create({
-      shift: id,
-      amount,
-      reason: reason.trim(),
-      loggedBy,
-    });
+    const entry = await PettyCash.create({ shift: id, amount, reason: reason.trim(), loggedBy });
 
     const io = req.app.get("io");
     io.emit("shift:pettyCashAdded", entry);
@@ -85,25 +85,24 @@ export const addPettyCash = async (req, res) => {
   }
 };
 
-// Shared calculation used by both the preview (GET summary) and the
-// real close (POST close), so the two can never disagree.
-//
-// Cash/till are now attributed from the receipt's own cashAmount/tillAmount
-// fields, which are populated correctly for cash-only, till-only, AND split
-// "both" payments — so a split payment counts its cash portion toward
-// expected cash-in-drawer and its till portion toward M-Pesa totals.
+// Shared calculation used by preview + real close. Now aggregates straight
+// from each receipt's `payments[]` array (grouped by method) instead of
+// only reading cashAmount/tillAmount — so it correctly reflects cash, till,
+// M-Pesa prompt AND reward payments processed under this shift.
 const computeShiftSummary = async (shiftId) => {
-  const shift = await Shift.findById(shiftId);
+  const shift = await Shift.findById(shiftId).populate("openedBy", "fullName").populate("closedBy", "fullName");
   if (!shift) return null;
 
-  const paidReceipts = await Receipt.find({ shift: shiftId, status: "paid" });
+  const receipts = await Receipt.find({ shift: shiftId, status: { $in: ["paid", "partial"] } });
 
-  const totals = { cash: 0, mpesa_till: 0, mpesa_paybill: 0, mpesa_pochi: 0 };
-  paidReceipts.forEach((r) => {
-    totals.cash += r.cashAmount || 0;
-    totals.mpesa_till += r.tillAmount || 0;
-    if (r.paymentMethod === "mpesa_paybill") totals.mpesa_paybill += r.amountPaid || 0;
-    if (r.paymentMethod === "mpesa_pochi") totals.mpesa_pochi += r.amountPaid || 0;
+  const totals = { cash: 0, till: 0, prompt: 0, reward: 0 };
+  receipts.forEach((r) => {
+    r.payments.forEach((p) => {
+      if (p.method === "cash") totals.cash += p.amount;
+      else if (["mpesa_till", "manual_till", "mpesa_paybill", "mpesa_pochi"].includes(p.method)) totals.till += p.amount;
+      else if (p.method === "mpesa_stk") totals.prompt += p.amount;
+      else if (p.method === "reward") totals.reward += p.amount;
+    });
   });
 
   const voidedReceipts = await Receipt.find({ shift: shiftId, status: "voided" });
@@ -119,21 +118,21 @@ const computeShiftSummary = async (shiftId) => {
   });
 
   const expectedCash = shift.openingFloat + totals.cash - pettyCashOut;
-  const grandTotal = totals.cash + totals.mpesa_till + totals.mpesa_paybill + totals.mpesa_pochi;
-
-  const variance =
-    shift.closingCashCount !== null ? shift.closingCashCount - expectedCash : null;
+  const grandTotal = totals.cash + totals.till + totals.prompt + totals.reward;
+  const variance = shift.closingCashCount !== null ? shift.closingCashCount - expectedCash : null;
 
   return {
     shiftId: shift._id,
     status: shift.status,
     openedBy: shift.openedBy,
     openedAt: shift.createdAt,
+    closedBy: shift.closedBy,
+    closedAt: shift.closedAt,
     openingFloat: shift.openingFloat,
     cashSales: totals.cash,
-    mpesaTill: totals.mpesa_till,
-    mpesaPaybill: totals.mpesa_paybill,
-    mpesaPochi: totals.mpesa_pochi,
+    tillSales: totals.till,
+    promptSales: totals.prompt,
+    rewardSales: totals.reward,
     voidedTotal,
     pettyCashOut,
     expectedCash,
@@ -145,14 +144,18 @@ const computeShiftSummary = async (shiftId) => {
   };
 };
 
-// @desc    Preview a shift's totals without closing it
+// @desc    Preview a shift's totals without closing it (must be yours, unless admin)
 // @route   GET /api/shifts/:id/summary
 // @access  Protected
 export const getShiftSummary = async (req, res) => {
   const { id } = req.params;
   try {
+    const shift = await Shift.findById(id);
+    if (!shift) return res.status(404).json({ message: "Shift not found" });
+    if (!req.user.isAdmin && String(shift.openedBy) !== String(req.user._id)) {
+      return res.status(403).json({ message: "This isn't your shift" });
+    }
     const summary = await computeShiftSummary(id);
-    if (!summary) return res.status(404).json({ message: "Shift not found" });
     res.json(summary);
   } catch (error) {
     console.error("Error computing shift summary:", error.message);
@@ -160,7 +163,7 @@ export const getShiftSummary = async (req, res) => {
   }
 };
 
-// @desc    Close a shift, stamping the counted cash and recomputing the summary
+// @desc    Close a shift (must be yours, unless admin)
 // @route   POST /api/shifts/:id/close
 // @access  Protected
 export const closeShift = async (req, res) => {
@@ -175,13 +178,13 @@ export const closeShift = async (req, res) => {
   try {
     const shift = await Shift.findById(id);
     if (!shift) return res.status(404).json({ message: "Shift not found" });
+    if (!req.user.isAdmin && String(shift.openedBy) !== String(req.user._id)) {
+      return res.status(403).json({ message: "This isn't your shift" });
+    }
     if (shift.status !== "open") {
       return res.status(400).json({ message: "Shift is already closed" });
     }
 
-    // Stamp the counted values first, then recompute the summary
-    // server-side using those exact stored numbers — never trust a
-    // client-submitted variance.
     shift.closingCashCount = closingCashCount;
     shift.tipsDeclared = tipsDeclared || 0;
     shift.notes = notes || null;
@@ -199,5 +202,25 @@ export const closeShift = async (req, res) => {
   } catch (error) {
     console.error("Error closing shift:", error.message);
     res.status(500).json({ message: "Failed to close shift", error: error.message });
+  }
+};
+
+// @desc    Admin — shift history for one accountant, filterable by date
+// @route   GET /api/shifts/history/:userId?from=&to=
+// @access  Protected — admin
+export const getShiftHistory = async (req, res) => {
+  const { userId } = req.params;
+  const { from, to } = req.query;
+  try {
+    const query = { openedBy: userId };
+    if (from || to) {
+      query.createdAt = {};
+      if (from) query.createdAt.$gte = new Date(from);
+      if (to) query.createdAt.$lte = new Date(to);
+    }
+    const shifts = await Shift.find(query).sort({ createdAt: -1 }).populate("closedBy", "fullName");
+    res.json(shifts);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load shift history", error: error.message });
   }
 };
