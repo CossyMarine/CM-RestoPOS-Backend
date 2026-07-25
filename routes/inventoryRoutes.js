@@ -13,6 +13,8 @@ import {
   logUsage,
   adjustStock,
   getUsageHistory,
+  getUsageOverview,
+  getItemUsageDetail,
   getInventorySummary,
 } from "../controllers/inventoryController.js";
 import { protect, authorize } from "../Middlewares/authMiddleware.js";
@@ -38,6 +40,8 @@ router.get("/stock", protect, adminOnly, getStockHistory);
 router.post("/stock", protect, adminOnly, addStock);
 
 // Usage — kitchen logs consumption/waste; admin can correct via /adjust
+router.get("/usage/overview", protect, adminAndKitchen, getUsageOverview);
+router.get("/usage/:itemId/detail", protect, adminAndKitchen, getItemUsageDetail);
 router.get("/usage", protect, adminOnly, getUsageHistory);
 router.post("/usage", protect, adminAndKitchen, logUsage);
 router.post("/adjust", protect, adminOnly, adjustStock);
