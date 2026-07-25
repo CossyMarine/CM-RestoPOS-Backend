@@ -4,7 +4,7 @@ import User from "../models/User.js";
 import MenuItem from "../models/MenuItem.js";
 import AdminSettings from "../models/AdminSettings.js";
 import { stkPush } from "../utils/mpesa.js";
-import { applyPaymentToReceipt, applyRewardRedemption } from "../utils/walletPayments.js";
+import { applyPaymentToReceipt, applyRewardRedemption , findCustomerByIdentifier} from "../utils/walletPayments.js";
 
 const attachMenuImages = async (items) => {
   const names = items.map((i) => i.mealName);
@@ -19,11 +19,7 @@ const attachMenuImages = async (items) => {
   }));
 };
 
-const findCustomerByIdentifier = (identifier) =>
-  User.findOne({
-    $or: [{ email: identifier.toLowerCase().trim() }, { phone: identifier.trim() }],
-    role: "customer",
-  });
+
 
 // @desc    Logged-in customer's wallet — points balance + unpaid/partial bills
 // @route   GET /api/wallet/me
