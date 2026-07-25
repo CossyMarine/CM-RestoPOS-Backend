@@ -374,3 +374,184 @@ export const getInventorySummary = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch inventory summary" });
   }
 };
+
+/* =================================================
+   USAGE REPORT — "since refill" view for admin + kitchen
+================================================= */
+
+// @desc    Get per-item usage totals (used/waste split) within a day window,
+//          plus each item's last restock info (who filled it, when, how much)
+// @route   GET /api/inventory/usage/overview?days=&search=
+// @access  Protected — admin, kitchen
+export const getUsageOverview = async (req, res) => {
+  try {
+    const { days = 1, search = "" } = req.query;
+    const since = new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
+
+    const itemFilter = req.user.isAdmin ? {} : { isActive: true };
+    if (search) itemFilter.name = { $regex: search, $options: "i" };
+
+    const items = await InventoryItem.find(itemFilter)
+      .populate("unit", "name abbreviation")
+      .sort({ name: 1 });
+
+    if (items.length === 0) {
+      return res.json({ since, days: Number(days), items: [] });
+    }
+
+    const itemIds = items.map((i) => i._id);
+
+    // usage totals per item within the window, split by reason
+    const usageAgg = await InventoryUsageLog.aggregate([
+      {
+        $match: {
+          item: { $in: itemIds },
+          reason: { $in: ["used", "waste"] },
+          createdAt: { $gte: since },
+        },
+      },
+      {
+        $group: {
+          _id: { item: "$item", reason: "$reason" },
+          quantity: { $sum: "$quantity" },
+          totalValue: { $sum: "$totalValue" },
+        },
+      },
+    ]);
+
+    // most recent restock per item, for "last refilled" context
+    const lastRefills = await StockEntry.aggregate([
+      { $match: { item: { $in: itemIds } } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: "$item",
+          quantity: { $first: "$quantity" },
+          costPerUnit: { $first: "$costPerUnit" },
+          addedBy: { $first: "$addedBy" },
+          createdAt: { $first: "$createdAt" },
+        },
+      },
+    ]);
+    await StockEntry.populate(lastRefills, { path: "addedBy", select: "fullName" });
+
+    const usageByItem = {};
+    usageAgg.forEach((u) => {
+      const key = String(u._id.item);
+      if (!usageByItem[key]) {
+        usageByItem[key] = {
+          used: { quantity: 0, totalValue: 0 },
+          waste: { quantity: 0, totalValue: 0 },
+        };
+      }
+      usageByItem[key][u._id.reason] = { quantity: u.quantity, totalValue: u.totalValue };
+    });
+
+    const refillByItem = {};
+    lastRefills.forEach((r) => {
+      refillByItem[String(r._id)] = r;
+    });
+
+    const result = items.map((item) => {
+      const usage = usageByItem[String(item._id)] || {
+        used: { quantity: 0, totalValue: 0 },
+        waste: { quantity: 0, totalValue: 0 },
+      };
+      const refill = refillByItem[String(item._id)] || null;
+
+      return {
+        item: {
+          _id: item._id,
+          name: item.name,
+          category: item.category,
+          unit: item.unit,
+          currentStock: item.currentStock,
+          costPerUnit: item.costPerUnit,
+          isActive: item.isActive,
+        },
+        usedQuantity: usage.used.quantity,
+        usedValue: usage.used.totalValue,
+        wastedQuantity: usage.waste.quantity,
+        wastedValue: usage.waste.totalValue,
+        totalQuantity: usage.used.quantity + usage.waste.quantity,
+        totalValue: usage.used.totalValue + usage.waste.totalValue,
+        lastRefill: refill
+          ? {
+              date: refill.createdAt,
+              quantity: refill.quantity,
+              costPerUnit: refill.costPerUnit,
+              filledBy: refill.addedBy?.fullName || "Unknown",
+            }
+          : null,
+      };
+    });
+
+    // busiest items float to the top
+    result.sort((a, b) => b.totalValue - a.totalValue);
+
+    res.json({ since, days: Number(days), items: result });
+  } catch (error) {
+    console.error("Error fetching usage overview:", error.message);
+    res.status(500).json({ message: "Failed to fetch usage overview" });
+  }
+};
+
+// @desc    Get one-by-one usage log entries for a single item within a day window,
+//          plus that item's last restock info
+// @route   GET /api/inventory/usage/:itemId/detail?days=
+// @access  Protected — admin, kitchen
+export const getItemUsageDetail = async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { days = 1 } = req.query;
+    const since = new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
+
+    const item = await InventoryItem.findById(itemId).populate("unit", "name abbreviation");
+    if (!item) return res.status(404).json({ message: "Inventory item not found" });
+
+    const lastRefill = await StockEntry.findOne({ item: itemId })
+      .sort({ createdAt: -1 })
+      .populate("addedBy", "fullName");
+
+    const logs = await InventoryUsageLog.find({
+      item: itemId,
+      reason: { $in: ["used", "waste"] },
+      createdAt: { $gte: since },
+    })
+      .populate("recordedBy", "fullName")
+      .sort({ createdAt: -1 });
+
+    res.json({
+      item: {
+        _id: item._id,
+        name: item.name,
+        category: item.category,
+        unit: item.unit,
+        currentStock: item.currentStock,
+      },
+      since,
+      days: Number(days),
+      lastRefill: lastRefill
+        ? {
+            date: lastRefill.createdAt,
+            quantity: lastRefill.quantity,
+            costPerUnit: lastRefill.costPerUnit,
+            filledBy: lastRefill.addedBy?.fullName || "Unknown",
+          }
+        : null,
+      logs: logs.map((l) => ({
+        _id: l._id,
+        quantity: l.quantity,
+        reason: l.reason,
+        costPerUnit: l.costPerUnit,
+        totalValue: l.totalValue,
+        note: l.note,
+        recordedBy: l.recordedBy?.fullName || "Unknown",
+        createdAt: l.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error("Error fetching item usage detail:", error.message);
+    res.status(500).json({ message: "Failed to fetch item usage detail" });
+  }
+};
