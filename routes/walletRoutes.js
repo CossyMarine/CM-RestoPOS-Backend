@@ -1,6 +1,6 @@
 // routes/walletRoutes.js
 import express from "express";
-import { protect, authorize } from "../Middlewares/authMiddleware.js";
+import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
 import {
   getMyWallet,
   resolveBill,
