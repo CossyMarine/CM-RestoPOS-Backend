@@ -59,6 +59,7 @@ export const authorize = (...allowedRoles) => {
 export const requirePermission = (key) => (req, res, next) => {
   if (!req.user) return res.status(403).json({ message: "Insufficient permissions" });
   if (req.user.isAdmin) return next();
+  if (req.user.role !== "accountant") return next(); // only accountants are permission-gated
   if (req.user.permissions?.[key]) return next();
   return res.status(403).json({ message: "You don't have access to this section" });
 };
