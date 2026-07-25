@@ -14,7 +14,7 @@ import {
   getCustomerOrders,
   cancelCustomerOrder,
 } from "../controllers/customerOrderController.js";
-import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
+import { protect, authorize } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
@@ -22,7 +22,7 @@ router.post("/", protect, authorize("cashier", "manager", "admin", "waiter"), cr
 
 router.get("/pending", protect, getPendingOrders);
 router.get("/history", protect, authorize("kitchen", "manager", "admin"), getOrderHistory);
-router.get("/kitchen/stats", protect, authorize("kitchen", "manager", "admin", "accountant"), requirePermission("kitchen"), getKitchenStats);
+router.get("/kitchen/stats", protect, authorize("kitchen", "manager", "admin"), getKitchenStats);
 
 router.patch("/:id/status", protect, authorize("kitchen", "manager", "admin"), updateOrderStatus);
 router.patch(
