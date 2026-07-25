@@ -21,7 +21,7 @@ router.post("/pay/stk", protect, payWithStk);
 router.get("/pay/stk/:receiptId/status", protect, getWalletStkStatus);
 router.post("/pay/reward", protect, payWithReward);
 
-router.post("/admin/add-reward", protect, authorize("admin"), adminAddReward);
-router.post("/admin/pay-with-reward", protect, authorize("admin"), adminPayWithReward);
+router.post("/admin/add-reward", protect, authorize("admin", "accountant"), requirePermission("payments"), adminAddReward);
+router.post("/admin/pay-with-reward", protect, authorize("admin", "accountant"), requirePermission("payments"), requireOpenShift, adminPayWithReward);
 
 export default router;
