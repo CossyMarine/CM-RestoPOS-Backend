@@ -1,37 +1,24 @@
 // routes/menuRoutes.js
 import express from "express";
 import {
-  getMenu,
-  createMenuItem,
-  updateMenuItem,
-  deleteMenuItem,
-  uploadMenuImage,
-  togglePinMenuItem,
-  reorderPinnedMenu,
+  getMenu, createMenuItem, updateMenuItem, deleteMenuItem,
+  uploadMenuImage, togglePinMenuItem, reorderPinnedMenu,
 } from "../controllers/menuController.js";
-import { protect, authorize } from "../Middlewares/authMiddleware.js";
+import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
 import { uploadMenuImage as uploadMenuImageMiddleware } from "../Config/cloudinary.js";
 
 const router = express.Router();
 
 const staffRoles = authorize("admin", "manager", "waiter", "accountant");
+const menuGate = requirePermission("manageMenu"); // was open to any accountant before — now gated
 
 router.get("/", getMenu);
 
-router.post(
-  "/upload-image",
-  protect,
-  staffRoles,
-  uploadMenuImageMiddleware.single("image"),
-  uploadMenuImage
-);
-
-// Literal routes before "/:id" so Express doesn't treat "reorder-pinned" as an id
-router.put("/reorder-pinned", protect, staffRoles, reorderPinnedMenu);
-router.patch("/:id/pin", protect, staffRoles, togglePinMenuItem);
-
-router.post("/", protect, staffRoles, createMenuItem);
-router.put("/:id", protect, staffRoles, updateMenuItem);
-router.delete("/:id", protect, staffRoles, deleteMenuItem);
+router.post("/upload-image", protect, staffRoles, menuGate, uploadMenuImageMiddleware.single("image"), uploadMenuImage);
+router.put("/reorder-pinned", protect, staffRoles, menuGate, reorderPinnedMenu);
+router.patch("/:id/pin", protect, staffRoles, menuGate, togglePinMenuItem);
+router.post("/", protect, staffRoles, menuGate, createMenuItem);
+router.put("/:id", protect, staffRoles, menuGate, updateMenuItem);
+router.delete("/:id", protect, staffRoles, menuGate, deleteMenuItem);
 
 export default router;
