@@ -14,7 +14,7 @@ import {
   updateUserRole,
   toggleUserStatus,
 } from "../controllers/authController.js";
-import { protect, authorize } from "../Middlewares/authMiddleware.js";
+import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
