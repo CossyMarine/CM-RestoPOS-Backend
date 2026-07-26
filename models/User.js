@@ -67,6 +67,16 @@ const userSchema = new mongoose.Schema(
     // Set automatically when a waiter is "dropped" via admin management.
     hiddenFromSelector: { type: Boolean, default: false },
 
+    // Password reset (forgot password) — numeric code flow
+resetCode: { type: String, select: false },            // sha256 hash of the 6-digit code
+resetCodeExpires: { type: Date, select: false },
+resetCodeAttempts: { type: Number, default: 0, select: false },
+resetCodeChannel: { type: String, enum: ["email", "sms", "whatsapp"], select: false },
+resetCodeLastSentAt: { type: Date, select: false },     // cooldown for resend
+
+resetToken: { type: String, select: false },            // short-lived token after code is verified
+resetTokenExpires: { type: Date, select: false },
+
     // Per-waiter selector control — governs what THIS waiter sees in their
     // own "assign/select waiter" dropdown after logging in.
     // "all"    = sees every active, non-globally-hidden waiter (default/legacy behavior)
