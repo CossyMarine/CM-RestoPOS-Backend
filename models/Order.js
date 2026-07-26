@@ -22,7 +22,7 @@ const orderSchema = new mongoose.Schema(
     subtotal:    { type: Number, required: true },
     status: {
       type: String,
-      enum: ["pending", "completed", "cancelled"],
+      enum: ["pending", "serving", "completed", "cancelled"],
       default: "pending",
     },
     source: { type: String, enum: ["staff", "online"], default: "staff" },
