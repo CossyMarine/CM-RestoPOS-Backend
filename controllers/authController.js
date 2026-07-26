@@ -2,6 +2,9 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import crypto from "crypto";
+import sendResetEmail from "../utils/sendResetEmail.js";
+import { sendResetCode } from "../utils/sendResetSms.js";
 
 // ======================= HELPERS =======================
 
@@ -446,6 +449,228 @@ export const changePassword = async (req, res) => {
     res.json({ message: "Password updated successfully" });
   } catch (error) {
     console.error("CHANGE PASSWORD ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ======================= FORGOT PASSWORD HELPERS =======================
+const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+
+const hashCode = (code) => crypto.createHash("sha256").update(code).digest("hex");
+
+const generateNumericCode = () =>
+  Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit numeric
+
+const maskContact = (value, method) => {
+  if (method === "email") {
+    const [name, domain] = value.split("@");
+    return `${name.slice(0, 2)}${"*".repeat(Math.max(name.length - 2, 1))}@${domain}`;
+  }
+  return value.slice(0, -4).replace(/./g, "*") + value.slice(-4);
+};
+
+const RESEND_COOLDOWN_MS = 60 * 1000; // 60s between sends
+const CODE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_ATTEMPTS = 5;
+
+// ======================= FORGOT PASSWORD (step 1: request code) =======================
+// @route   POST /api/auth/forgot-password
+// @body    { identifier }  -- email OR phone
+// @access  Public
+export const forgotPassword = async (req, res) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier || !identifier.trim()) {
+      return res.status(400).json({ message: "Enter your email or phone number" });
+    }
+
+    const value = identifier.trim();
+    const method = isEmail(value) ? "email" : "phone";
+    const clean = method === "email" ? value.toLowerCase() : value;
+
+    const user = await User.findOne({ [method]: clean }).select(
+      "+resetCode +resetCodeExpires +resetCodeAttempts +resetCodeChannel +resetCodeLastSentAt"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        notFound: true,
+        message: "No account found with that email or phone number.",
+      });
+    }
+
+    if (user.resetCodeLastSentAt && Date.now() - user.resetCodeLastSentAt.getTime() < RESEND_COOLDOWN_MS) {
+      const waitSec = Math.ceil(
+        (RESEND_COOLDOWN_MS - (Date.now() - user.resetCodeLastSentAt.getTime())) / 1000
+      );
+      return res.status(429).json({ message: `Please wait ${waitSec}s before requesting another code.` });
+    }
+
+    const code = generateNumericCode();
+    const channel = method === "email" ? "email" : "sms"; // phone defaults to SMS first
+
+    user.resetCode = hashCode(code);
+    user.resetCodeExpires = new Date(Date.now() + CODE_EXPIRY_MS);
+    user.resetCodeAttempts = 0;
+    user.resetCodeChannel = channel;
+    user.resetCodeLastSentAt = new Date();
+    await user.save();
+
+    try {
+      if (method === "email") {
+        await sendResetEmail({ to: user.email, code, fullName: user.fullName });
+      } else {
+        await sendResetCode({ to: user.phone, code, channel: "sms" });
+      }
+    } catch (sendErr) {
+      console.error("SEND RESET CODE ERROR:", sendErr);
+      return res.status(500).json({ message: "Failed to send reset code. Please try again." });
+    }
+
+    res.json({
+      message: `A reset code was sent via ${channel}.`,
+      method,
+      channel,
+      maskedContact: maskContact(clean, method),
+    });
+  } catch (error) {
+    console.error("FORGOT PASSWORD ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ======================= RESEND CODE (SMS <-> WhatsApp switch) =======================
+// @route   POST /api/auth/resend-reset-code
+// @body    { identifier, channel }  -- channel: "sms" | "whatsapp" (phone only)
+// @access  Public
+export const resendResetCode = async (req, res) => {
+  try {
+    const { identifier, channel } = req.body;
+    if (!identifier) return res.status(400).json({ message: "Missing identifier" });
+
+    const value = identifier.trim();
+    const method = isEmail(value) ? "email" : "phone";
+    const clean = method === "email" ? value.toLowerCase() : value;
+
+    const user = await User.findOne({ [method]: clean }).select(
+      "+resetCode +resetCodeExpires +resetCodeAttempts +resetCodeChannel +resetCodeLastSentAt"
+    );
+    if (!user) return res.status(404).json({ notFound: true, message: "Account not found" });
+
+    if (user.resetCodeLastSentAt && Date.now() - user.resetCodeLastSentAt.getTime() < RESEND_COOLDOWN_MS) {
+      const waitSec = Math.ceil(
+        (RESEND_COOLDOWN_MS - (Date.now() - user.resetCodeLastSentAt.getTime())) / 1000
+      );
+      return res.status(429).json({ message: `Please wait ${waitSec}s before resending.` });
+    }
+
+    const code = generateNumericCode();
+    const useChannel = method === "phone" && channel === "whatsapp" ? "whatsapp" : method === "email" ? "email" : "sms";
+
+    user.resetCode = hashCode(code);
+    user.resetCodeExpires = new Date(Date.now() + CODE_EXPIRY_MS);
+    user.resetCodeAttempts = 0;
+    user.resetCodeChannel = useChannel;
+    user.resetCodeLastSentAt = new Date();
+    await user.save();
+
+    if (method === "email") {
+      await sendResetEmail({ to: user.email, code, fullName: user.fullName });
+    } else {
+      await sendResetCode({ to: user.phone, code, channel: useChannel });
+    }
+
+    res.json({ message: `Code resent via ${useChannel}.`, channel: useChannel });
+  } catch (error) {
+    console.error("RESEND RESET CODE ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ======================= VERIFY CODE (step 2) =======================
+// @route   POST /api/auth/verify-reset-code
+// @body    { identifier, code }
+// @access  Public
+export const verifyResetCode = async (req, res) => {
+  try {
+    const { identifier, code } = req.body;
+    if (!identifier || !code) {
+      return res.status(400).json({ message: "Identifier and code are required" });
+    }
+
+    const value = identifier.trim();
+    const method = isEmail(value) ? "email" : "phone";
+    const clean = method === "email" ? value.toLowerCase() : value;
+
+    const user = await User.findOne({ [method]: clean }).select(
+      "+resetCode +resetCodeExpires +resetCodeAttempts"
+    );
+    if (!user || !user.resetCode) {
+      return res.status(400).json({ message: "Invalid or expired code" });
+    }
+
+    if (user.resetCodeExpires < new Date()) {
+      return res.status(400).json({ message: "Code expired. Please request a new one." });
+    }
+
+    if (user.resetCodeAttempts >= MAX_ATTEMPTS) {
+      return res.status(429).json({ message: "Too many attempts. Please request a new code." });
+    }
+
+    if (hashCode(code.trim()) !== user.resetCode) {
+      user.resetCodeAttempts += 1;
+      await user.save();
+      return res.status(400).json({ message: "Incorrect code" });
+    }
+
+    // Code correct — issue a short-lived reset token, clear the code
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    user.resetToken = hashCode(resetToken);
+    user.resetTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
+    user.resetCode = undefined;
+    user.resetCodeExpires = undefined;
+    user.resetCodeAttempts = 0;
+    await user.save();
+
+    res.json({ message: "Code verified", resetToken });
+  } catch (error) {
+    console.error("VERIFY RESET CODE ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ======================= RESET PASSWORD (step 3) =======================
+// @route   POST /api/auth/reset-password
+// @body    { resetToken, newPassword }
+// @access  Public
+export const resetPasswordWithCode = async (req, res) => {
+  try {
+    const { resetToken, newPassword } = req.body;
+    if (!resetToken || !newPassword) {
+      return res.status(400).json({ message: "Missing reset token or new password" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
+    const user = await User.findOne({
+      resetToken: hashCode(resetToken),
+      resetTokenExpires: { $gt: new Date() },
+    }).select("+resetToken +resetTokenExpires");
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired session. Please start over." });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    user.resetToken = undefined;
+    user.resetTokenExpires = undefined;
+    await user.save();
+
+    res.json({ message: "Password reset successful" });
+  } catch (error) {
+    console.error("RESET PASSWORD ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
