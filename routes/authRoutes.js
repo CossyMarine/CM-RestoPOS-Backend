@@ -1,4 +1,3 @@
-// routes/authRoutes.js
 import express from "express";
 import {
   login,
@@ -13,6 +12,8 @@ import {
   getStaffCount,
   updateUserRole,
   toggleUserStatus,
+  updateMe,
+  changePassword,
 } from "../controllers/authController.js";
 import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
 
@@ -21,6 +22,8 @@ const router = express.Router();
 router.post("/login", login);
 router.post("/logout", logout);
 router.get("/me", protect, getMe);
+router.patch("/me", protect, updateMe);
+router.put("/change-password", protect, changePassword);
 router.get("/check-availability", checkAvailability);
 router.post("/register-customer", registerCustomer);
 router.post("/register", protect, authorize("admin"), createUser);
