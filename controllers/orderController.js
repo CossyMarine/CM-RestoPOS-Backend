@@ -1,6 +1,8 @@
 // controllers/orderController.js
 import Order from "../models/Order.js";
 import Receipt from "../models/Receipt.js";
+import Shift from "../models/Shift.js";
+import User from "../models/User.js";
 import { generateReceiptForOrder } from "../utils/generateReceipt.js";
 
 // @desc    Create a new order and receipt (staff/manual entry)
