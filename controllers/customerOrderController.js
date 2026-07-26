@@ -30,7 +30,7 @@ export const createCustomerOrder = async (req, res) => {
       waiterName: null,
       items: itemsWithTotals,
       subtotal,
-      status: "pending",
+      status: "pending", // awaiting a waiter to take it — NOT in the kitchen queue yet
       source: "online",
       customer: req.user._id,
       customerName: req.user.fullName,
@@ -39,7 +39,9 @@ export const createCustomerOrder = async (req, res) => {
     const receipt = await generateReceiptForOrder(order, { customer: req.user._id });
 
     const io = req.app.get("io");
-    io.emit("order:created", { order, receipt, source: "online" });
+    // Only the waiter dashboard listens for this — the kitchen does not,
+    // so the order does not reach the kitchen until a waiter takes it.
+    io.emit("onlineOrder:new", { order, receipt });
 
     res.status(201).json({ order, receipt, billId: receipt.billId });
   } catch (error) {
