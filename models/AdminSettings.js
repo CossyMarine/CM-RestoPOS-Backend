@@ -33,6 +33,10 @@ const adminSettingsSchema = new mongoose.Schema(
     assumeTableNumberCustomer: { type: Boolean, default: false },
     assumeTableNumberWaiter: { type: Boolean, default: false },
 
+    // When true, a receipt automatically prints (with payment breakdown)
+    // the moment a bill becomes fully paid. Defaults to off.
+    allowPrintingDuringPayment: { type: Boolean, default: false },
+
     reward: { type: rewardSettingsSchema, default: () => ({}) },
   },
   { timestamps: true }
