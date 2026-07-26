@@ -39,12 +39,15 @@ export const createOrder = async (req, res) => {
       ready: false,
     }));
 
+    // Staff-entered orders already have a waiter attached, so they go
+    // straight into the kitchen queue instead of waiting on "pending".
     const order = await Order.create({
       tableNumber,
       waiterName,
       items: itemsWithSnapshot,
       subtotal,
       source: "staff",
+      status: "serving",
     });
 
     const receipt = await generateReceiptForOrder(order);
@@ -65,7 +68,9 @@ export const createOrder = async (req, res) => {
 // @access  Protected
 export const getPendingOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ status: "pending" }).sort({ createdAt: 1 });
+    // Kitchen's live queue = orders actively being served. Online orders
+    // only reach this state once a waiter has claimed them.
+    const orders = await Order.find({ status: "serving" }).sort({ createdAt: 1 });
     res.json(orders);
   } catch (error) {
     console.error("Error fetching pending orders:", error.message);
@@ -80,7 +85,7 @@ export const updateOrderStatus = async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
-  const allowedStatuses = ["pending", "completed", "cancelled"];
+  const allowedStatuses = ["pending", "serving", "completed", "cancelled"];
   if (!allowedStatuses.includes(status)) {
     return res.status(400).json({ message: "Invalid status value" });
   }
@@ -135,7 +140,11 @@ export const toggleItemReady = async (req, res) => {
   }
 };
 
-// @desc    A waiter claims an online order (assigns themselves as server of record)
+// @desc    A waiter claims an online order (assigns themselves as server of
+//          record). This is the moment the order actually reaches the
+//          kitchen — it moves from "pending" (awaiting a waiter) to
+//          "serving" (in the kitchen queue), and the kitchen is notified
+//          for the first time via order:created so its alarm fires once.
 // @route   PATCH /api/orders/:id/assign
 // @access  Protected — waiter, manager, admin
 export const assignOrderWaiter = async (req, res) => {
@@ -152,13 +161,24 @@ export const assignOrderWaiter = async (req, res) => {
     if (order.source !== "online") {
       return res.status(400).json({ message: "Only online orders can be claimed this way" });
     }
+    if (order.status !== "pending") {
+      return res.status(400).json({ message: "This order has already been taken" });
+    }
 
     order.waiterName = waiterName;
+    order.status = "serving";
     await order.save();
 
-    await Receipt.findOneAndUpdate({ order: order._id }, { waiterName });
+    const receipt = await Receipt.findOneAndUpdate(
+      { order: order._id },
+      { waiterName },
+      { new: true }
+    );
 
     const io = req.app.get("io");
+    // First time the kitchen hears about this order — queues it + rings the alarm once
+    io.emit("order:created", { order, receipt, source: "online" });
+    // Customer + other waiter tabs sync on the status change (pending -> serving)
     io.emit("order:updated", order);
 
     res.json(order);
