@@ -363,3 +363,89 @@ export const toggleUserStatus = async (req, res) => {
     res.status(500).json({ message: "Failed to update status" });
   }
 };
+
+// @desc    Update the logged-in user's own contact info (email/phone/name).
+//          Used by Profile > Personal Details — lets a user add whichever
+//          of email/phone they're missing (or edit the one they have).
+// @route   PATCH /api/auth/me
+// @access  Protected
+export const updateMe = async (req, res) => {
+  try {
+    let { fullName, email, phone } = req.body;
+    const user = await User.findById(req.user._id);
+
+    if (fullName !== undefined) {
+      fullName = fullName.trim();
+      if (!fullName) {
+        return res.status(400).json({ message: "Full name can't be empty" });
+      }
+      user.fullName = fullName;
+    }
+
+    if (email !== undefined && email !== null && email !== "") {
+      const cleanEmail = email.toLowerCase().trim();
+      if (cleanEmail !== (user.email || "")) {
+        const taken = await User.findOne({ email: cleanEmail, _id: { $ne: user._id } });
+        if (taken) {
+          return res.status(400).json({ message: "This email is already registered" });
+        }
+        user.email = cleanEmail;
+      }
+    }
+
+    if (phone !== undefined && phone !== null && phone !== "") {
+      const cleanPhone = phone.trim();
+      if (cleanPhone !== (user.phone || "")) {
+        const taken = await User.findOne({ phone: cleanPhone, _id: { $ne: user._id } });
+        if (taken) {
+          return res.status(400).json({ message: "This phone number is already registered" });
+        }
+        user.phone = cleanPhone;
+      }
+    }
+
+    if (!user.email && !user.phone) {
+      return res.status(400).json({ message: "You must have at least one of email or phone" });
+    }
+
+    await user.save();
+    res.json({ user: publicUser(user) });
+  } catch (error) {
+    console.error("UPDATE ME ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// @desc    Change the logged-in user's own password
+// @route   PUT /api/auth/change-password
+// @access  Protected
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: "New passwords don't match" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters" });
+    }
+
+    const user = await User.findById(req.user._id); // req.user has password excluded, refetch full doc
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Current password is incorrect" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("CHANGE PASSWORD ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
