@@ -17,8 +17,9 @@ export const getSettings = async (req, res) => {
 // @desc    Update admin settings (partial merge — send only what changed)
 // @route   PATCH /api/settings
 // @access  Protected — admin
+
 export const updateSettings = async (req, res) => {
-  const { tillNumber, tillName, whatsappNumber, callNumber, reward, assumeTableNumberCustomer, assumeTableNumberWaiter } = req.body;
+  const { tillNumber, tillName, whatsappNumber, callNumber, reward, assumeTableNumberCustomer, assumeTableNumberWaiter, allowPrintingDuringPayment } = req.body;
   try {
     const settings = await AdminSettings.getSettings();
     if (tillNumber !== undefined) settings.tillNumber = tillNumber;
@@ -27,6 +28,7 @@ export const updateSettings = async (req, res) => {
     if (callNumber !== undefined) settings.callNumber = callNumber;
     if (assumeTableNumberCustomer !== undefined) settings.assumeTableNumberCustomer = assumeTableNumberCustomer;
     if (assumeTableNumberWaiter !== undefined) settings.assumeTableNumberWaiter = assumeTableNumberWaiter;
+    if (allowPrintingDuringPayment !== undefined) settings.allowPrintingDuringPayment = allowPrintingDuringPayment;
     if (reward && typeof reward === "object") {
       const current = settings.reward.toObject ? settings.reward.toObject() : settings.reward;
       settings.reward = { ...current, ...reward };
@@ -48,6 +50,7 @@ export const getPublicSettings = async (req, res) => {
       callNumber: s.callNumber,
       assumeTableNumberCustomer: s.assumeTableNumberCustomer,
       assumeTableNumberWaiter: s.assumeTableNumberWaiter,
+      allowPrintingDuringPayment: s.allowPrintingDuringPayment,
       reward: {
         enabled: s.reward.enabled,
         pointValueKes: s.reward.pointValueKes,
