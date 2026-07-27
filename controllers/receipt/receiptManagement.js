@@ -43,20 +43,33 @@ export const addItemsToReceipt = async (req, res) => {
     receipt.subtotal = subtotal;
     await receipt.save();
 
-    const order = await Order.findByIdAndUpdate(
-      receipt.order,
-      { items: merged, subtotal },
-      { new: true }
-    );
+    const existingOrder = await Order.findById(receipt.order);
+
+    // Was this ticket already served/cancelled and cleared off the kitchen
+    // screen? If so, silently merging new items into that same order would
+    // either resurrect a card kitchen already dismissed, or bury the new
+    // items among ones already prepared. Instead we reopen the order (so
+    // billing/history stays on one continuous record) but tell the kitchen
+    // to treat it as a brand-new ticket.
+    const reopened = !!existingOrder && ["completed", "cancelled"].includes(existingOrder.status);
+
+    const orderUpdate = { items: merged, subtotal };
+    if (reopened) {
+      orderUpdate.status = "pending";
+      orderUpdate.servedAt = null;
+      orderUpdate.cancelledAt = null;
+    }
+
+    const order = await Order.findByIdAndUpdate(receipt.order, orderUpdate, { new: true });
 
     const io = req.app.get("io");
     io.emit("receipt:updated", receipt);
     if (order) {
       io.emit("order:updated", order);
-      // Dedicated event: kitchen treats this as a fresh ticket for the
-      // *added* items only — rings the alarm and flags the order as new
-      // again, without re-announcing items already in prep/ready.
-      io.emit("order:itemsAdded", { order, receipt, addedItems });
+      // Kitchen-facing signal. `reopened` tells the kitchen screen whether
+      // this is a fresh ticket (order was already served/cleared) or an
+      // addition to a still-active one.
+      io.emit("order:itemsAdded", { order, receipt, addedItems, reopened });
     }
 
     res.json(receipt);
@@ -65,8 +78,6 @@ export const addItemsToReceipt = async (req, res) => {
     res.status(500).json({ message: "Failed to add items", error: error.message });
   }
 };
-
-    
 
 // @desc    Record that a receipt was (re)printed
 // @route   PATCH /api/receipts/:id/print
