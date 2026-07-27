@@ -2,6 +2,7 @@
 import User from "../models/User.js";
 import Receipt from "../models/Receipt.js";
 import Shift from "../models/Shift.js";
+import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 
 const METHOD_BUCKET = (method) => {
   if (method === "cash") return "cash";
@@ -47,11 +48,13 @@ export const getAccountantStats = async (req, res) => {
       return res.status(404).json({ message: "Accountant not found" });
     }
 
+    // Both bounds are anchored to the Kenyan calendar day the picker value
+    // falls on, and "to" is pushed to the end of that day so it's inclusive.
     const paymentMatch = { "payments.paidBy": accountant._id };
     if (from || to) {
       paymentMatch["payments.paidAt"] = {};
-      if (from) paymentMatch["payments.paidAt"].$gte = new Date(from);
-      if (to) paymentMatch["payments.paidAt"].$lte = new Date(to);
+      if (from) paymentMatch["payments.paidAt"].$gte = getKenyanDayBounds(from).start;
+      if (to) paymentMatch["payments.paidAt"].$lte = getKenyanDayBounds(to).end;
     }
 
     const grouped = await Receipt.aggregate([
@@ -71,8 +74,8 @@ export const getAccountantStats = async (req, res) => {
     const shiftQuery = { openedBy: accountant._id };
     if (from || to) {
       shiftQuery.createdAt = {};
-      if (from) shiftQuery.createdAt.$gte = new Date(from);
-      if (to) shiftQuery.createdAt.$lte = new Date(to);
+      if (from) shiftQuery.createdAt.$gte = getKenyanDayBounds(from).start;
+      if (to) shiftQuery.createdAt.$lte = getKenyanDayBounds(to).end;
     }
     const shifts = await Shift.find(shiftQuery).sort({ createdAt: -1 }).populate("closedBy", "fullName");
 
@@ -86,38 +89,5 @@ export const getAccountantStats = async (req, res) => {
   } catch (error) {
     console.error("Error computing accountant stats:", error.message);
     res.status(500).json({ message: "Failed to load accountant stats", error: error.message });
-  }
-};
-
-// @desc    Update an accountant's module permissions
-// @route   PATCH /api/accountants/:id/permissions
-// @access  Protected — admin
-export const updateAccountantPermissions = async (req, res) => {
-  const { id } = req.params;
-  const { permissions } = req.body;
-
-  if (!permissions || typeof permissions !== "object") {
-    return res.status(400).json({ message: "permissions object is required" });
-  }
-
-  const ALLOWED_KEYS = [
-    "inventory", "manageMenu", "ordersReceipts", "voidRequests",
-    "users", "settings", "waiterManagement", "kitchen", "payments",
-  ];
-
-  try {
-    const accountant = await User.findById(id);
-    if (!accountant || accountant.role !== "accountant") {
-      return res.status(404).json({ message: "Accountant not found" });
-    }
-
-    ALLOWED_KEYS.forEach((key) => {
-      if (typeof permissions[key] === "boolean") accountant.permissions[key] = permissions[key];
-    });
-    await accountant.save();
-
-    res.json({ message: "Permissions updated", permissions: accountant.permissions });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to update permissions", error: error.message });
   }
 };
