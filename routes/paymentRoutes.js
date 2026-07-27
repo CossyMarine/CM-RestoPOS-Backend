@@ -2,6 +2,7 @@
 import express from "express";
 import {
   getTransactions,
+  getPaymentSummary,
   getPendingManualPayments,
   getPendingManualPaymentsCount,
   confirmManualPayment,
@@ -11,6 +12,7 @@ import { protect, authorize, requirePermission, requireOpenShift } from "../Midd
 
 const router = express.Router();
 
+router.get("/summary", protect, authorize("admin", "accountant"), getPaymentSummary);
 router.get("/transactions", protect, authorize("admin", "accountant"), getTransactions);
 router.get("/pending", protect, authorize("admin", "accountant"), getPendingManualPayments);
 router.get("/pending/count", protect, authorize("admin", "accountant"), getPendingManualPaymentsCount);
