@@ -1,5 +1,6 @@
 // controllers/receipt/receiptQueries.js
 import Receipt from "../../models/Receipt.js";
+import { getKenyanDayBounds } from "../../utils/dateHelpers.js";
 
 // Online orders that no waiter has claimed yet shouldn't clutter the
 // normal admin tabs — they live in the "Pending Online" tab instead
@@ -61,10 +62,7 @@ export const getPendingOnlineReceipts = async (req, res) => {
 // @access  Protected — admin, accountant
 export const getReceiptsTodaySummary = async (req, res) => {
   try {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    const { start: startOfDay, end: endOfDay } = getKenyanDayBounds();
 
     const [paidAgg, unpaidAgg] = await Promise.all([
       Receipt.aggregate([
@@ -144,9 +142,11 @@ export const getReceiptHistory = async (req, res) => {
       filter.$or = orClauses;
     }
     if (from || to) {
+      // Both bounds are anchored to the Kenyan calendar day the picker value
+      // falls on, and "to" is pushed to the end of that day so it's inclusive.
       filter.createdAt = {};
-      if (from) filter.createdAt.$gte = new Date(from);
-      if (to) filter.createdAt.$lte = new Date(to);
+      if (from) filter.createdAt.$gte = getKenyanDayBounds(from).start;
+      if (to) filter.createdAt.$lte = getKenyanDayBounds(to).end;
     }
 
     const total = await Receipt.countDocuments(filter);
@@ -188,9 +188,10 @@ export const getReceiptHistoryByWaiter = async (req, res) => {
       filter.$or = orClauses;
     }
     if (from || to) {
+      // Same Kenya-day anchoring as getReceiptHistory above.
       filter.createdAt = {};
-      if (from) filter.createdAt.$gte = new Date(from);
-      if (to) filter.createdAt.$lte = new Date(to);
+      if (from) filter.createdAt.$gte = getKenyanDayBounds(from).start;
+      if (to) filter.createdAt.$lte = getKenyanDayBounds(to).end;
     }
 
     const total = await Receipt.countDocuments(filter);
