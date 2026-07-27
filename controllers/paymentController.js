@@ -4,26 +4,40 @@
 // customer-submitted manual-till payments still waiting for admin confirmation.
 import Receipt from "../models/Receipt.js";
 import { applyPaymentToReceipt } from "../utils/walletPayments.js";
+import { getDateRangePreset } from "../utils/dateHelpers.js";
+
+// Builds a Mongo range from either a named preset (Kenya/EAT-anchored,
+// via utils/dateHelpers.js) or explicit from/to ISO dates from the calendar picker.
+const resolveDateRange = ({ preset, from, to }) => {
+  if (preset && preset !== "custom") {
+    const { startDate, endDate } = getDateRangePreset(preset);
+    return { $gte: startDate, $lte: endDate };
+  }
+  if (from || to) {
+    const range = {};
+    if (from) range.$gte = new Date(from);
+    if (to) range.$lte = new Date(to);
+    return range;
+  }
+  return null;
+};
 
 // @desc    Flattened, paginated list of individual payment entries across all
 //          bills — filterable by method, searchable by bill/table/reference/payer.
-// @route   GET /api/payments/transactions?page=1&limit=15&method=cash&q=&from=&to=
+// @route   GET /api/payments/transactions?page=1&limit=15&method=cash&q=&from=&to=&preset=
 // @access  Protected — admin, accountant
 export const getTransactions = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, parseInt(req.query.limit) || 15);
-    const { method, q, from, to } = req.query;
+    const { method, q, from, to, preset } = req.query;
 
     const pipeline = [{ $unwind: "$payments" }];
 
     const matchStage = {};
     if (method) matchStage["payments.method"] = method;
-    if (from || to) {
-      matchStage["payments.paidAt"] = {};
-      if (from) matchStage["payments.paidAt"].$gte = new Date(from);
-      if (to) matchStage["payments.paidAt"].$lte = new Date(to);
-    }
+    const dateRange = resolveDateRange({ preset, from, to });
+    if (dateRange) matchStage["payments.paidAt"] = dateRange;
     if (Object.keys(matchStage).length) pipeline.push({ $match: matchStage });
 
     pipeline.push(
@@ -95,6 +109,64 @@ export const getTransactions = async (req, res) => {
   } catch (error) {
     console.error("Error fetching transactions:", error.message);
     res.status(500).json({ message: "Failed to fetch transactions" });
+  }
+};
+
+// @desc    Summary totals for the Payments dashboard cards — Total Money,
+//          Total Cash, Paid using Reward, Till, Prompt — over a date range.
+//          ?preset=today|this_week|last_7_days|this_month|last_30_days is
+//          Kenya/EAT-anchored (see utils/dateHelpers.js); or pass explicit
+//          ?from=&to= ISO dates for a custom calendar range.
+// @route   GET /api/payments/summary
+// @access  Protected — admin, accountant
+export const getPaymentSummary = async (req, res) => {
+  try {
+    const { from, to, preset } = req.query;
+    const dateRange = resolveDateRange({ preset, from, to });
+
+    const pipeline = [{ $unwind: "$payments" }];
+    if (dateRange) pipeline.push({ $match: { "payments.paidAt": dateRange } });
+
+    pipeline.push({
+      $group: {
+        _id: null,
+        totalMoney: { $sum: "$payments.amount" },
+        totalCash: {
+          $sum: { $cond: [{ $eq: ["$payments.method", "cash"] }, "$payments.amount", 0] },
+        },
+        totalReward: {
+          $sum: { $cond: [{ $eq: ["$payments.method", "reward"] }, "$payments.amount", 0] },
+        },
+        // Till = anything paid to a business till/paybill number and reconciled
+        // manually by staff (Buy Goods, Paybill, Pochi la Biashara, manual entry)
+        totalTill: {
+          $sum: {
+            $cond: [
+              { $in: ["$payments.method", ["mpesa_till", "manual_till", "mpesa_pochi", "mpesa_paybill"]] },
+              "$payments.amount",
+              0,
+            ],
+          },
+        },
+        // Prompt = STK push, the automated pay-prompt sent to the customer's phone
+        totalPrompt: {
+          $sum: { $cond: [{ $eq: ["$payments.method", "mpesa_stk"] }, "$payments.amount", 0] },
+        },
+      },
+    });
+
+    const [result] = await Receipt.aggregate(pipeline);
+
+    res.json({
+      totalMoney: result?.totalMoney || 0,
+      totalCash: result?.totalCash || 0,
+      totalReward: result?.totalReward || 0,
+      totalTill: result?.totalTill || 0,
+      totalPrompt: result?.totalPrompt || 0,
+    });
+  } catch (error) {
+    console.error("Error fetching payment summary:", error.message);
+    res.status(500).json({ message: "Failed to fetch payment summary" });
   }
 };
 
