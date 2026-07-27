@@ -1,16 +1,13 @@
 // controllers/revenueController.js
 import Receipt from "../models/Receipt.js";
+import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 
 // @desc    Get total revenue and paid receipt count for today
 // @route   GET /api/revenue/today
 // @access  Public
 export const getTodayRevenue = async (req, res) => {
   try {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    const { start: startOfDay, end: endOfDay } = getKenyanDayBounds();
 
     const result = await Receipt.aggregate([
       {
