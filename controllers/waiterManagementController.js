@@ -3,15 +3,10 @@ import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
 import VoidRequest from "../models/VoidRequest.js";
 import Shift from "../models/Shift.js";
+import { getKenyanDateRanges } from "../utils/dateHelpers.js";
 
 function getDateRanges() {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfWeek = new Date(startOfToday);
-  startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  return { startOfToday, startOfWeek, startOfMonth, startOfYear };
+  return getKenyanDateRanges();
 }
 
 // @route GET /api/waiters/management?search=&status=all|active|inactive&sort=name|orders|sales|void
