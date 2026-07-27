@@ -20,25 +20,23 @@ export const addItemsToReceipt = async (req, res) => {
       return res.status(400).json({ message: "Only unpaid bills can be added to" });
     }
 
-    const merged = [...receipt.items];
-    items.forEach((incoming) => {
-      const lineTotal = incoming.quantity * incoming.unitPrice;
-      const existing = merged.find(
-        (i) => i.mealName === incoming.mealName && i.unitPrice === incoming.unitPrice
-      );
-      if (existing) {
-        existing.quantity += incoming.quantity;
-        existing.lineTotal += lineTotal;
-      } else {
-        merged.push({
-          mealName: incoming.mealName,
-          quantity: incoming.quantity,
-          unitPrice: incoming.unitPrice,
-          lineTotal,
-        });
-      }
-    });
+    const now = new Date();
 
+    // Always appended as their own line items — never merged into an existing
+    // line — so each addition stays a distinct, clearly-flagged kitchen ticket
+    // regardless of whether an earlier line of the same dish is already ready.
+    const addedItems = items.map((incoming) => ({
+      menuItemId: incoming.menuItemId || incoming._id || null,
+      mealName: incoming.mealName,
+      imageUrl: incoming.imageUrl || null,
+      quantity: incoming.quantity,
+      unitPrice: incoming.unitPrice,
+      lineTotal: incoming.quantity * incoming.unitPrice,
+      ready: false,
+      addedAt: now,
+    }));
+
+    const merged = [...receipt.items, ...addedItems];
     const subtotal = merged.reduce((sum, i) => sum + i.lineTotal, 0);
 
     receipt.items = merged;
@@ -53,7 +51,13 @@ export const addItemsToReceipt = async (req, res) => {
 
     const io = req.app.get("io");
     io.emit("receipt:updated", receipt);
-    if (order) io.emit("order:updated", order);
+    if (order) {
+      io.emit("order:updated", order);
+      // Dedicated event: kitchen treats this as a fresh ticket for the
+      // *added* items only — rings the alarm and flags the order as new
+      // again, without re-announcing items already in prep/ready.
+      io.emit("order:itemsAdded", { order, receipt, addedItems });
+    }
 
     res.json(receipt);
   } catch (error) {
@@ -61,6 +65,8 @@ export const addItemsToReceipt = async (req, res) => {
     res.status(500).json({ message: "Failed to add items", error: error.message });
   }
 };
+
+    
 
 // @desc    Record that a receipt was (re)printed
 // @route   PATCH /api/receipts/:id/print
