@@ -10,6 +10,7 @@ const orderItemSchema = new mongoose.Schema(
     unitPrice: { type: Number, required: true },
     lineTotal: { type: Number, required: true },
     ready:     { type: Boolean, default: false }, // per-item kitchen check-off
+    addedAt:   { type: Date, default: null }, // set when this line was appended to an existing bill after the original order (waiter "Add Items" flow) — null for items placed with the original order
   },
   { _id: false }
 );
