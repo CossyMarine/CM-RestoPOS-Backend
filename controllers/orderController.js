@@ -4,6 +4,7 @@ import Receipt from "../models/Receipt.js";
 import Shift from "../models/Shift.js";
 import User from "../models/User.js";
 import { generateReceiptForOrder } from "../utils/generateReceipt.js";
+import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 
 // @desc    Create a new order and receipt (staff/manual entry)
 // @route   POST /api/orders
@@ -205,12 +206,14 @@ export const getOrderHistory = async (req, res) => {
 
     if (req.query.startDate || req.query.endDate) {
       query.createdAt = {};
-      if (req.query.startDate) query.createdAt.$gte = new Date(req.query.startDate);
+      // Both bounds are anchored to the Kenyan calendar day the picker value
+      // falls on, not the server's local timezone.
+      if (req.query.startDate) {
+        query.createdAt.$gte = getKenyanDayBounds(req.query.startDate).start;
+      }
       if (req.query.endDate) {
-        // Treat endDate as inclusive of the whole day
-        const end = new Date(req.query.endDate);
-        end.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = end;
+        // Treat endDate as inclusive of the whole Kenyan day
+        query.createdAt.$lte = getKenyanDayBounds(req.query.endDate).end;
       }
     }
 
@@ -258,8 +261,7 @@ export const getOrderHistory = async (req, res) => {
 // @access  Protected — kitchen, manager, admin
 export const getKitchenStats = async (req, res) => {
   try {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const { start: startOfDay } = getKenyanDayBounds();
 
     const servedToday = await Order.find({
       status: "completed",
