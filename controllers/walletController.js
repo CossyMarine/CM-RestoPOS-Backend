@@ -19,8 +19,6 @@ const attachMenuImages = async (items) => {
   }));
 };
 
-
-
 // @desc    Logged-in customer's wallet — points balance + unpaid/partial bills
 // @route   GET /api/wallet/me
 // @access  Protected
@@ -118,16 +116,14 @@ export const resolveBill = async (req, res) => {
 };
 
 // @desc    Pay a bill via manual till.
-//          - Staff (admin/waiter/manager/cashier acting from the Orders ledger,
-//            i.e. req.user.isAdmin) have already verified the till payment in
-//            person, so no M-Pesa code / name is required from them — this
-//            posts straight to the bill as before.
+//          - Staff (admins AND accountants acting from the Orders ledger)
+//            have already verified the till payment in person, so no
+//            M-Pesa code / name is required from them — this posts
+//            straight to the bill.
 //          - A customer paying themselves from the wallet IS required to give
 //            an M-Pesa code or their full name as proof. Their submission is
 //            queued on the receipt (pendingManualPayments) and the bill stays
 //            unpaid/partial until an admin confirms it on the Payments page.
-//            This is what "waiting for approval" means everywhere else in the
-//            app (customer order list, admin ledger, sidebar toast).
 // @route   POST /api/wallet/pay/manual
 // @access  Protected
 export const payWithManualTill = async (req, res) => {
@@ -135,9 +131,14 @@ export const payWithManualTill = async (req, res) => {
 
   if (!receiptId || !amount) return res.status(400).json({ message: "Bill and amount are required" });
 
+  // Trusted staff = full-access admins AND accountants (role: "accountant").
+  // Checking isAdmin alone missed accountants (isAdmin: false), so they were
+  // wrongly asked for an M-Pesa code/name and queued like a customer.
+  const isStaff = req.user.isAdmin || req.user.role === "accountant";
+
   // Only customers self-servicing from the wallet need to prove the payment —
   // staff entering it from the Orders ledger have already confirmed it in person.
-  if (!req.user.isAdmin && (!reference || !reference.trim())) {
+  if (!isStaff && (!reference || !reference.trim())) {
     return res.status(400).json({ message: "Enter the M-Pesa code or your full name as payment proof" });
   }
 
@@ -158,7 +159,7 @@ export const payWithManualTill = async (req, res) => {
     const io = req.app.get("io");
 
     // Trusted staff entry (Orders ledger "Till" button) — apply immediately.
-    if (req.user.isAdmin) {
+    if (isStaff) {
       const updated = await applyPaymentToReceipt({
         receipt,
         amount: amt,
@@ -317,7 +318,7 @@ export const payWithReward = async (req, res) => {
 // @desc    Admin credits reward points to a registered customer who paid
 //          in person, by looking them up via email or phone
 // @route   POST /api/wallet/admin/add-reward
-// @access  Protected — admin
+// @access  Protected — admin, accountant
 export const adminAddReward = async (req, res) => {
   const { identifier, amountSpent } = req.body;
   if (!identifier || !amountSpent) {
