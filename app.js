@@ -32,6 +32,8 @@ app.set("trust proxy", 1);
 
 /* CORS — credentials:true is required so the httpOnly auth cookie is sent */
 const ALLOWED_ORIGINS = [
+   "https://cm-resto-pos-frontend-djfuwhc1n.vercel.app",
+  "https://cm-resto-pos-frontend.vercel.app",
   "https://cm-resto-pos-frontend.vercel.app",
   "http://localhost:3000", // local dev
   "http://localhost:5173", // vite dev
