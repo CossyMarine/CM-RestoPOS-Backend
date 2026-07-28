@@ -91,3 +91,35 @@ export const getAccountantStats = async (req, res) => {
     res.status(500).json({ message: "Failed to load accountant stats", error: error.message });
   }
 };
+// @desc    Update an accountant's module permissions
+// @route   PATCH /api/accountants/:id/permissions
+// @access  Protected — admin
+export const updateAccountantPermissions = async (req, res) => {
+  const { id } = req.params;
+  const { permissions } = req.body;
+
+  if (!permissions || typeof permissions !== "object") {
+    return res.status(400).json({ message: "permissions object is required" });
+  }
+
+  const ALLOWED_KEYS = [
+    "inventory", "manageMenu", "ordersReceipts", "voidRequests",
+    "users", "settings", "waiterManagement", "kitchen", "payments",
+  ];
+
+  try {
+    const accountant = await User.findById(id);
+    if (!accountant || accountant.role !== "accountant") {
+      return res.status(404).json({ message: "Accountant not found" });
+    }
+
+    ALLOWED_KEYS.forEach((key) => {
+      if (typeof permissions[key] === "boolean") accountant.permissions[key] = permissions[key];
+    });
+    await accountant.save();
+
+    res.json({ message: "Permissions updated", permissions: accountant.permissions });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update permissions", error: error.message });
+  }
+};
