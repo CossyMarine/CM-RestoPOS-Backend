@@ -1,19 +1,27 @@
 // controllers/menuController.js
 import MenuItem from "../models/MenuItem.js";
 import { cloudinary } from "../Config/cloudinary.js";
+import { redisService } from "../routes/services/redis.service.js";
 
 // @desc    Get all available menu items (pinned items always first)
 // @route   GET /api/menu
 // @access  Public
 export const getMenu = async (req, res) => {
   try {
+    const cachedMenu = await redisService.get("menu:all");
+    if (cachedMenu) {
+      return res.json(cachedMenu);
+    }
+
     const items = await MenuItem.find({ isAvailable: true }).sort({
       pinned: -1,
       pinOrder: 1,
       category: 1,
       name: 1,
     });
-    res.json(items);
+
+    await redisService.set("menu:all", items);
+    return res.json(items);
   } catch (error) {
     console.error("Error fetching menu:", error.message);
     res.status(500).json({ message: "Failed to fetch menu" });
@@ -60,6 +68,7 @@ export const createMenuItem = async (req, res) => {
       imagePublicId:  imagePublicId || null,
     });
 
+    await redisService.del("menu:all");
     res.status(201).json(item);
   } catch (error) {
     console.error("Error creating menu item:", error.message);
@@ -105,6 +114,9 @@ export const updateMenuItem = async (req, res) => {
       runValidators: true,
     });
 
+    if (item) {
+      await redisService.del("menu:all");
+    }
     res.json(item);
   } catch (error) {
     console.error("Error updating menu item:", error.message);
@@ -123,6 +135,8 @@ export const deleteMenuItem = async (req, res) => {
     if (!item) {
       return res.status(404).json({ message: "Menu item not found" });
     }
+
+    await redisService.del("menu:all");
 
     if (item.imagePublicId) {
       await cloudinary.uploader.destroy(item.imagePublicId).catch(() => {});
@@ -156,6 +170,7 @@ export const togglePinMenuItem = async (req, res) => {
     }
 
     await item.save();
+    await redisService.del("menu:all");
     res.json(item);
   } catch (error) {
     console.error("Error toggling pin:", error.message);
@@ -187,6 +202,7 @@ export const reorderPinnedMenu = async (req, res) => {
       category: 1,
       name: 1,
     });
+    await redisService.del("menu:all");
     res.json(items);
   } catch (error) {
     console.error("Error reordering pinned menu:", error.message);
