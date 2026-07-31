@@ -1,6 +1,11 @@
 // controllers/revenueController.js
 import Receipt from "../models/Receipt.js";
 import { getKenyanDayBounds, getDateRangePreset } from "../utils/dateHelpers.js";
+import { redisService } from "../routes/services/redis.service.js";
+
+const REDIS_TTL_SECONDS = 30;
+const TOTAL_REVENUE_CACHE_KEY = "dashboard:totalRevenue";
+const TOTAL_RECEIPTS_CACHE_KEY = "dashboard:totalReceipts";
 
 // @desc    Get total revenue and paid receipt count for today
 // @route   GET /api/revenue/today
@@ -42,22 +47,58 @@ export const getTodayRevenue = async (req, res) => {
 // @access  Protected — admin
 export const getRevenueSummary = async (req, res) => {
   try {
+    // TEMPORARY REDIS PERFORMANCE TEST
+    const revenueStart = Date.now();
+    let totalRevenue = null;
+    const cachedRevenue = await redisService.get(TOTAL_REVENUE_CACHE_KEY);
+
+    if (cachedRevenue !== null) {
+      totalRevenue = cachedRevenue;
+      console.log(`Dashboard KPI: Redis HIT totalRevenue — ${Date.now() - revenueStart}ms`);
+    } else {
+      const result = await Receipt.aggregate([
+        { $match: { status: "paid" } },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$subtotal" },
+          },
+        },
+      ]);
+
+      const data = result[0] || { totalRevenue: 0 };
+      totalRevenue = data.totalRevenue;
+      await redisService.set(TOTAL_REVENUE_CACHE_KEY, totalRevenue, REDIS_TTL_SECONDS);
+      console.log(`Dashboard KPI: Redis MISS totalRevenue — MongoDB — ${Date.now() - revenueStart}ms`);
+    }
+
+    const receiptsStart = Date.now();
+    let totalReceipts = null;
+    const cachedReceipts = await redisService.get(TOTAL_RECEIPTS_CACHE_KEY);
+
+    if (cachedReceipts !== null) {
+      totalReceipts = cachedReceipts;
+      console.log(`Dashboard KPI: Redis HIT totalReceipts — ${Date.now() - receiptsStart}ms`);
+    } else {
+      totalReceipts = await Receipt.countDocuments({});
+      await redisService.set(TOTAL_RECEIPTS_CACHE_KEY, totalReceipts, REDIS_TTL_SECONDS);
+      console.log(`Dashboard KPI: Redis MISS totalReceipts — MongoDB — ${Date.now() - receiptsStart}ms`);
+    }
+
     const result = await Receipt.aggregate([
       { $match: { status: "paid" } },
       {
         $group: {
           _id: null,
-          totalRevenue: { $sum: "$subtotal" },
           totalPaidReceipts: { $sum: 1 },
         },
       },
     ]);
 
-    const totalReceipts = await Receipt.countDocuments({});
-    const data = result[0] || { totalRevenue: 0, totalPaidReceipts: 0 };
+    const data = result[0] || { totalPaidReceipts: 0 };
 
     res.json({
-      totalRevenue: data.totalRevenue,
+      totalRevenue,
       totalPaidReceipts: data.totalPaidReceipts,
       totalReceipts,
     });
