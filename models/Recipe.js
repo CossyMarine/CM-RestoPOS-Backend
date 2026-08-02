@@ -1,0 +1,27 @@
+// models/Recipe.js
+import mongoose from "mongoose";
+
+const ingredientSchema = new mongoose.Schema(
+  {
+    inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryItem", required: true },
+    quantity: { type: Number, required: true, min: 0.000001 },
+    unit: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryUnit", required: true },
+  },
+  { _id: false }
+);
+
+const recipeSchema = new mongoose.Schema(
+  {
+    menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true, unique: true },
+    ingredients: { type: [ingredientSchema], required: true, default: [] },
+    isActive: { type: Boolean, default: true },
+    note: { type: String, trim: true, default: "" },
+  },
+  { timestamps: true }
+);
+
+recipeSchema.index({ menuItem: 1, isActive: 1 }, { unique: true });
+
+const Recipe = mongoose.model("Recipe", recipeSchema);
+
+export default Recipe;

@@ -4,6 +4,8 @@ import InventoryItem from "../models/InventoryItem.js";
 import InventoryLocation from "../models/InventoryLocation.js";
 import InventoryStock from "../models/InventoryStock.js";
 import InventoryTransfer from "../models/InventoryTransfer.js";
+import Recipe from "../models/Recipe.js";
+import MenuItem from "../models/MenuItem.js";
 import StockEntry from "../models/StockEntry.js";
 import InventoryUsageLog from "../models/InventoryUsageLog.js";
 import mongoose from "mongoose";
@@ -338,6 +340,249 @@ export const getTransfers = async (req, res) => {
   } catch (error) {
     console.error("Error fetching inventory transfers:", error.message);
     res.status(500).json({ message: "Failed to fetch inventory transfers" });
+  }
+};
+
+/* =================================================
+   RECIPES — BOM / ingredient definitions for menu items
+================================================= */
+
+const validateRecipePayload = async (payload) => {
+  const { menuItem, ingredients } = payload;
+
+  if (!menuItem) {
+    throw new Error("menuItem is required");
+  }
+
+  if (!Array.isArray(ingredients) || ingredients.length === 0) {
+    throw new Error("At least one ingredient is required");
+  }
+
+  const menu = await MenuItem.findById(menuItem);
+  if (!menu) {
+    throw new Error("Menu item not found");
+  }
+
+  const seenInventoryItems = new Set();
+
+  for (const ingredient of ingredients) {
+    if (!ingredient.inventoryItem) {
+      throw new Error("Each ingredient requires an inventoryItem");
+    }
+    if (!ingredient.unit) {
+      throw new Error("Each ingredient requires a unit");
+    }
+    if (!ingredient.quantity || ingredient.quantity <= 0) {
+      throw new Error("Each ingredient quantity must be greater than 0");
+    }
+
+    const inventoryItem = await InventoryItem.findById(ingredient.inventoryItem);
+    if (!inventoryItem) {
+      throw new Error("Inventory item not found");
+    }
+
+    if (seenInventoryItems.has(String(ingredient.inventoryItem))) {
+      throw new Error("Duplicate inventory item in recipe");
+    }
+    seenInventoryItems.add(String(ingredient.inventoryItem));
+
+    const unit = await InventoryUnit.findById(ingredient.unit);
+    if (!unit) {
+      throw new Error("Unit not found");
+    }
+
+    if (String(inventoryItem.unit) !== String(ingredient.unit)) {
+      throw new Error("Ingredient unit must match the inventory item's configured unit");
+    }
+  }
+
+  return { menu };
+};
+
+// @desc    Create a recipe for a menu item
+// @route   POST /api/inventory/recipes
+// @access  Protected — admin
+export const createRecipe = async (req, res) => {
+  try {
+    const { menuItem, ingredients, note } = req.body;
+    const payload = { menuItem, ingredients };
+    await validateRecipePayload(payload);
+
+    const existingRecipe = await Recipe.findOne({ menuItem, isActive: true });
+    if (existingRecipe) {
+      return res.status(400).json({ message: "An active recipe already exists for this menu item" });
+    }
+
+    const recipe = await Recipe.create({
+      menuItem,
+      ingredients,
+      note: note || "",
+      isActive: true,
+    });
+
+    const populatedRecipe = await Recipe.findById(recipe._id)
+      .populate({ path: "menuItem", select: "name" })
+      .populate({ path: "ingredients.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("ingredients.unit", "name abbreviation");
+
+    res.status(201).json(populatedRecipe);
+  } catch (error) {
+    if (error.message === "menuItem is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "At least one ingredient is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient requires an inventoryItem") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient requires a unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient quantity must be greater than 0") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Menu item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Inventory item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Unit not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Ingredient unit must match the inventory item's configured unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Duplicate inventory item in recipe") {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("Error creating recipe:", error.message);
+    res.status(500).json({ message: "Failed to create recipe" });
+  }
+};
+
+// @desc    Get all recipes
+// @route   GET /api/inventory/recipes
+// @access  Protected — admin, accountant
+export const getRecipes = async (req, res) => {
+  try {
+    const recipes = await Recipe.find({ isActive: true })
+      .populate({ path: "menuItem", select: "name" })
+      .populate({ path: "ingredients.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("ingredients.unit", "name abbreviation")
+      .sort({ createdAt: -1 });
+
+    res.json(recipes);
+  } catch (error) {
+    console.error("Error fetching recipes:", error.message);
+    res.status(500).json({ message: "Failed to fetch recipes" });
+  }
+};
+
+// @desc    Get a recipe for a specific menu item
+// @route   GET /api/inventory/recipes/:menuItemId
+// @access  Protected — admin, accountant
+export const getRecipeByMenuItem = async (req, res) => {
+  try {
+    const { menuItemId } = req.params;
+    const recipe = await Recipe.findOne({ menuItem: menuItemId, isActive: true })
+      .populate({ path: "menuItem", select: "name" })
+      .populate({ path: "ingredients.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("ingredients.unit", "name abbreviation");
+
+    if (!recipe) return res.status(404).json({ message: "Recipe not found" });
+    res.json(recipe);
+  } catch (error) {
+    console.error("Error fetching recipe:", error.message);
+    res.status(500).json({ message: "Failed to fetch recipe" });
+  }
+};
+
+// @desc    Update a recipe
+// @route   PUT /api/inventory/recipes/:id
+// @access  Protected — admin
+export const updateRecipe = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { menuItem, ingredients, note, isActive } = req.body;
+
+    const recipe = await Recipe.findById(id);
+    if (!recipe) return res.status(404).json({ message: "Recipe not found" });
+
+    const payload = {
+      menuItem: menuItem ?? recipe.menuItem,
+      ingredients: ingredients ?? recipe.ingredients,
+    };
+    await validateRecipePayload(payload);
+
+    if (menuItem && String(menuItem) !== String(recipe.menuItem)) {
+      const existingRecipe = await Recipe.findOne({ menuItem, isActive: true });
+      if (existingRecipe) {
+        return res.status(400).json({ message: "An active recipe already exists for this menu item" });
+      }
+    }
+
+    recipe.menuItem = menuItem ?? recipe.menuItem;
+    recipe.ingredients = ingredients ?? recipe.ingredients;
+    if (note !== undefined) recipe.note = note;
+    if (isActive !== undefined) recipe.isActive = isActive;
+    await recipe.save();
+
+    const populatedRecipe = await Recipe.findById(recipe._id)
+      .populate({ path: "menuItem", select: "name" })
+      .populate({ path: "ingredients.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("ingredients.unit", "name abbreviation");
+
+    res.json(populatedRecipe);
+  } catch (error) {
+    if (error.message === "menuItem is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "At least one ingredient is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient requires an inventoryItem") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient requires a unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient quantity must be greater than 0") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Menu item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Inventory item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Unit not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Ingredient unit must match the inventory item's configured unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Duplicate inventory item in recipe") {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("Error updating recipe:", error.message);
+    res.status(500).json({ message: "Failed to update recipe" });
+  }
+};
+
+// @desc    Deactivate a recipe
+// @route   DELETE /api/inventory/recipes/:id
+// @access  Protected — admin
+export const deleteRecipe = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const recipe = await Recipe.findByIdAndUpdate(id, { isActive: false }, { new: true });
+    if (!recipe) return res.status(404).json({ message: "Recipe not found" });
+    res.json({ message: "Recipe deactivated", recipe });
+  } catch (error) {
+    console.error("Error deleting recipe:", error.message);
+    res.status(500).json({ message: "Failed to deactivate recipe" });
   }
 };
 
