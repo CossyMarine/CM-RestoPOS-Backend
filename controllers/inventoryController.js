@@ -9,6 +9,7 @@ import MenuItem from "../models/MenuItem.js";
 import StockEntry from "../models/StockEntry.js";
 import InventoryUsageLog from "../models/InventoryUsageLog.js";
 import Production from "../models/Production.js";
+import InventoryReceiving from "../models/InventoryReceiving.js";
 import mongoose from "mongoose";
 const resolveInventoryLocation = async (locationId, fallbackName) => {
   if (locationId) {
@@ -139,6 +140,303 @@ export const consumeRecipeIngredientsForOrder = async (order, reqUserId, session
   return { consumed: true, logs: usageLogs, location: kitchenLocation };
 };
 
+const validateReceivingPayload = async (payload) => {
+  const { location, items } = payload;
+
+  if (!location) {
+    throw new Error("location is required");
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("At least one item is required");
+  }
+
+  const locationDoc = await InventoryLocation.findById(location);
+  if (!locationDoc) {
+    throw new Error("Inventory location not found");
+  }
+
+  if (!locationDoc.isActive) {
+    throw new Error("Inventory location is not active");
+  }
+
+  const seenItems = new Set();
+
+  for (const item of items) {
+    if (!item.inventoryItem) {
+      throw new Error("Each item requires an inventoryItem");
+    }
+    if (!item.unit) {
+      throw new Error("Each item requires a unit");
+    }
+    if (!item.quantity || Number(item.quantity) <= 0) {
+      throw new Error("Each item quantity must be greater than 0");
+    }
+    if (item.costPerUnit === undefined || item.costPerUnit === null || Number(item.costPerUnit) < 0) {
+      throw new Error("Each item costPerUnit must be greater than or equal to 0");
+    }
+
+    const inventoryItem = await InventoryItem.findById(item.inventoryItem);
+    if (!inventoryItem) {
+      throw new Error("Inventory item not found");
+    }
+    if (!inventoryItem.isActive) {
+      throw new Error("Inventory item is not active");
+    }
+
+    const unitDoc = await InventoryUnit.findById(item.unit);
+    if (!unitDoc) {
+      throw new Error("Unit not found");
+    }
+
+    if (String(inventoryItem.unit) !== String(item.unit)) {
+      throw new Error("Item unit must match the inventory item's configured unit");
+    }
+
+    const key = String(item.inventoryItem);
+    if (seenItems.has(key)) {
+      throw new Error("Duplicate inventory item in receiving");
+    }
+    seenItems.add(key);
+  }
+
+  return { locationDoc };
+};
+
+export const createReceiving = async (req, res) => {
+  try {
+    const { supplierName, referenceNumber, location, items, note } = req.body;
+
+    const payload = { location, items };
+    await validateReceivingPayload(payload);
+
+    const locationDoc = await InventoryLocation.findById(location);
+    const normalizedItems = items.map((item) => ({
+      inventoryItem: item.inventoryItem,
+      quantity: Number(item.quantity),
+      unit: item.unit,
+      costPerUnit: Number(item.costPerUnit),
+      totalCost: Number(item.quantity) * Number(item.costPerUnit),
+    }));
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const receiving = await InventoryReceiving.create([
+        {
+          supplierName: supplierName || "",
+          referenceNumber: referenceNumber || "",
+          location: locationDoc._id,
+          items: normalizedItems,
+          receivedBy: req.user._id,
+          note: note || "",
+          status: "received",
+        },
+      ], { session });
+
+      for (const item of normalizedItems) {
+        const inventoryItem = await InventoryItem.findById(item.inventoryItem).session(session);
+        if (!inventoryItem) {
+          throw new Error("Inventory item not found");
+        }
+
+        let stockBalance = await InventoryStock.findOne({ item: item.inventoryItem, location: locationDoc._id }).session(session);
+        if (!stockBalance) {
+          stockBalance = await InventoryStock.create([{ item: item.inventoryItem, location: locationDoc._id, quantity: 0 }], { session });
+          stockBalance = stockBalance[0];
+        }
+
+        stockBalance.quantity += item.quantity;
+        await stockBalance.save({ session });
+
+        inventoryItem.currentStock += item.quantity;
+        inventoryItem.costPerUnit = item.costPerUnit;
+        await inventoryItem.save({ session });
+
+        await StockEntry.create([
+          {
+            item: item.inventoryItem,
+            quantity: item.quantity,
+            costPerUnit: item.costPerUnit,
+            totalCost: item.totalCost,
+            addedBy: req.user._id,
+            note: `Receiving ${receiving[0]._id}`,
+          },
+        ], { session });
+      }
+
+      await session.commitTransaction();
+      session.endSession();
+
+      const populatedReceiving = await InventoryReceiving.findById(receiving[0]._id)
+        .populate({ path: "location", select: "name code" })
+        .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+        .populate({ path: "items.unit", select: "name abbreviation" })
+        .populate("receivedBy", "fullName");
+
+      res.status(201).json(populatedReceiving);
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  } catch (error) {
+    if (error.message === "location is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "At least one item is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Inventory location not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Inventory location is not active") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each item requires an inventoryItem") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each item requires a unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each item quantity must be greater than 0") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each item costPerUnit must be greater than or equal to 0") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Inventory item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Inventory item is not active") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Unit not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Item unit must match the inventory item's configured unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Duplicate inventory item in receiving") {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("Error creating receiving:", error.message);
+    res.status(500).json({ message: "Failed to create receiving" });
+  }
+};
+
+export const getReceivings = async (req, res) => {
+  try {
+    const receipts = await InventoryReceiving.find()
+      .populate({ path: "location", select: "name code" })
+      .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "items.unit", select: "name abbreviation" })
+      .populate("receivedBy", "fullName")
+      .sort({ createdAt: -1 });
+
+    res.json(receipts);
+  } catch (error) {
+    console.error("Error fetching receiving records:", error.message);
+    res.status(500).json({ message: "Failed to fetch receiving records" });
+  }
+};
+
+export const getReceivingById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const receiving = await InventoryReceiving.findById(id)
+      .populate({ path: "location", select: "name code" })
+      .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "items.unit", select: "name abbreviation" })
+      .populate("receivedBy", "fullName");
+
+    if (!receiving) {
+      return res.status(404).json({ message: "Receiving record not found" });
+    }
+
+    res.json(receiving);
+  } catch (error) {
+    console.error("Error fetching receiving record:", error.message);
+    res.status(500).json({ message: "Failed to fetch receiving record" });
+  }
+};
+
+export const cancelReceiving = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const receiving = await InventoryReceiving.findById(id);
+
+    if (!receiving) {
+      return res.status(404).json({ message: "Receiving record not found" });
+    }
+
+    if (receiving.status === "cancelled") {
+      return res.status(400).json({ message: "Receiving is already cancelled" });
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      for (const item of receiving.items) {
+        const inventoryItem = await InventoryItem.findById(item.inventoryItem).session(session);
+        if (!inventoryItem) {
+          throw new Error("Inventory item not found");
+        }
+
+        const stockBalance = await InventoryStock.findOne({ item: item.inventoryItem, location: receiving.location }).session(session);
+        if (!stockBalance) {
+          throw new Error("Inventory stock balance not found");
+        }
+
+        if (stockBalance.quantity < item.quantity) {
+          throw new Error("Cannot cancel receiving because stock would become negative");
+        }
+
+        stockBalance.quantity -= item.quantity;
+        await stockBalance.save({ session });
+
+        inventoryItem.currentStock -= item.quantity;
+        await inventoryItem.save({ session });
+      }
+
+      receiving.status = "cancelled";
+      await receiving.save({ session });
+
+      await session.commitTransaction();
+      session.endSession();
+
+      const populatedReceiving = await InventoryReceiving.findById(receiving._id)
+        .populate({ path: "location", select: "name code" })
+        .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+        .populate({ path: "items.unit", select: "name abbreviation" })
+        .populate("receivedBy", "fullName");
+
+      res.json(populatedReceiving);
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  } catch (error) {
+    if (error.message === "Inventory item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Inventory stock balance not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Cannot cancel receiving because stock would become negative") {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("Error cancelling receiving:", error.message);
+    res.status(500).json({ message: "Failed to cancel receiving" });
+  }
+};
+
+/* =================================================
+   UNITS — admin-defined measurement units
+================================================= */
 const validateProductionPayload = async (payload) => {
   const { producedItem, quantityProduced, unit, ingredientsUsed } = payload;
 
