@@ -292,10 +292,13 @@ export const createReceiving = async (req, res) => {
 
       res.status(201).json(populatedReceiving);
     } catch (error) {
-      await session.abortTransaction();
-      session.endSession();
-      throw error;
-    }
+  if (session.inTransaction()) {
+    await session.abortTransaction();
+  }
+
+  session.endSession();
+  throw error;
+}
   } catch (error) {
     if (error.message === "location is required") {
       return res.status(400).json({ message: error.message });

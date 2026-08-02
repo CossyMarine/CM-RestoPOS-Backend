@@ -13,7 +13,10 @@ const receivingItemSchema = new mongoose.Schema(
 
 const inventoryReceivingSchema = new mongoose.Schema(
   {
+    
+    
     supplierName: { type: String, trim: true, default: "" },
+    supplier: { type: mongoose.Schema.Types.ObjectId, ref: "Supplier" },
     referenceNumber: { type: String, trim: true, default: "" },
     location: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryLocation", required: true },
     items: { type: [receivingItemSchema], required: true, default: [] },
