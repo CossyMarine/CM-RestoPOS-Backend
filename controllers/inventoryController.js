@@ -10,6 +10,7 @@ import StockEntry from "../models/StockEntry.js";
 import InventoryUsageLog from "../models/InventoryUsageLog.js";
 import Production from "../models/Production.js";
 import InventoryReceiving from "../models/InventoryReceiving.js";
+import Supplier from "../models/Supplier.js";
 import mongoose from "mongoose";
 const resolveInventoryLocation = async (locationId, fallbackName) => {
   if (locationId) {
@@ -205,12 +206,24 @@ const validateReceivingPayload = async (payload) => {
 
 export const createReceiving = async (req, res) => {
   try {
-    const { supplierName, referenceNumber, location, items, note } = req.body;
+    const { supplierName, supplier, referenceNumber, location, items, note } = req.body;
 
     const payload = { location, items };
     await validateReceivingPayload(payload);
 
     const locationDoc = await InventoryLocation.findById(location);
+
+    let supplierDoc = null;
+    if (supplier) {
+      supplierDoc = await Supplier.findById(supplier);
+      if (!supplierDoc) {
+        return res.status(404).json({ message: "Supplier not found" });
+      }
+      if (!supplierDoc.isActive) {
+        return res.status(400).json({ message: "Supplier is not active" });
+      }
+    }
+
     const normalizedItems = items.map((item) => ({
       inventoryItem: item.inventoryItem,
       quantity: Number(item.quantity),
@@ -228,6 +241,7 @@ export const createReceiving = async (req, res) => {
           supplierName: supplierName || "",
           referenceNumber: referenceNumber || "",
           location: locationDoc._id,
+          supplier: supplierDoc?._id || undefined,
           items: normalizedItems,
           receivedBy: req.user._id,
           note: note || "",
@@ -273,7 +287,8 @@ export const createReceiving = async (req, res) => {
         .populate({ path: "location", select: "name code" })
         .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
         .populate({ path: "items.unit", select: "name abbreviation" })
-        .populate("receivedBy", "fullName");
+        .populate("receivedBy", "fullName")
+        .populate("supplier", "name phone email contactPerson isActive");
 
       res.status(201).json(populatedReceiving);
     } catch (error) {
@@ -333,6 +348,7 @@ export const getReceivings = async (req, res) => {
       .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
       .populate({ path: "items.unit", select: "name abbreviation" })
       .populate("receivedBy", "fullName")
+      .populate("supplier", "name phone email contactPerson isActive")
       .sort({ createdAt: -1 });
 
     res.json(receipts);
@@ -349,7 +365,8 @@ export const getReceivingById = async (req, res) => {
       .populate({ path: "location", select: "name code" })
       .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
       .populate({ path: "items.unit", select: "name abbreviation" })
-      .populate("receivedBy", "fullName");
+      .populate("receivedBy", "fullName")
+      .populate("supplier", "name phone email contactPerson isActive");
 
     if (!receiving) {
       return res.status(404).json({ message: "Receiving record not found" });
@@ -411,7 +428,8 @@ export const cancelReceiving = async (req, res) => {
         .populate({ path: "location", select: "name code" })
         .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
         .populate({ path: "items.unit", select: "name abbreviation" })
-        .populate("receivedBy", "fullName");
+        .populate("receivedBy", "fullName")
+        .populate("supplier", "name phone email contactPerson isActive");
 
       res.json(populatedReceiving);
     } catch (error) {
@@ -431,6 +449,143 @@ export const cancelReceiving = async (req, res) => {
     }
     console.error("Error cancelling receiving:", error.message);
     res.status(500).json({ message: "Failed to cancel receiving" });
+  }
+};
+
+export const createSupplier = async (req, res) => {
+  try {
+    const { name, phone, email, address, contactPerson, note } = req.body;
+
+    const normalizedName = typeof name === "string" ? name.trim() : "";
+    if (!normalizedName) {
+      return res.status(400).json({ message: "Name is required" });
+    }
+
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+
+    const existingSupplier = await Supplier.findOne({ name: { $regex: `^${normalizedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" }, isActive: true });
+    if (existingSupplier) {
+      return res.status(400).json({ message: "Supplier name already exists" });
+    }
+
+    const supplier = await Supplier.create({
+      name: normalizedName,
+      phone: phone || "",
+      email: normalizedEmail,
+      address: address || "",
+      contactPerson: contactPerson || "",
+      note: note || "",
+      isActive: true,
+    });
+
+    res.status(201).json(supplier);
+  } catch (error) {
+    console.error("Error creating supplier:", error.message);
+    res.status(500).json({ message: "Failed to create supplier" });
+  }
+};
+
+export const getSuppliers = async (req, res) => {
+  try {
+    const filter = req.query.includeInactive === "true" ? {} : { isActive: true };
+    const suppliers = await Supplier.find(filter).sort({ name: 1 });
+    res.json(suppliers);
+  } catch (error) {
+    console.error("Error fetching suppliers:", error.message);
+    res.status(500).json({ message: "Failed to fetch suppliers" });
+  }
+};
+
+export const getSupplierById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supplier = await Supplier.findById(id);
+    if (!supplier) return res.status(404).json({ message: "Supplier not found" });
+    res.json(supplier);
+  } catch (error) {
+    console.error("Error fetching supplier:", error.message);
+    res.status(500).json({ message: "Failed to fetch supplier" });
+  }
+};
+
+export const updateSupplier = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supplier = await Supplier.findById(id);
+    if (!supplier) return res.status(404).json({ message: "Supplier not found" });
+
+    const allowedFields = ["name", "phone", "email", "address", "contactPerson", "note", "isActive"];
+    const updates = {};
+
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    });
+
+    if (updates.name !== undefined) {
+      const normalizedName = updates.name.trim();
+      if (!normalizedName) {
+        return res.status(400).json({ message: "Name is required" });
+      }
+      updates.name = normalizedName;
+      const duplicate = await Supplier.findOne({
+        _id: { $ne: id },
+        name: { $regex: `^${normalizedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+        isActive: true,
+      });
+      if (duplicate) {
+        return res.status(400).json({ message: "Supplier name already exists" });
+      }
+    }
+
+    if (updates.email !== undefined && typeof updates.email === "string") {
+      updates.email = updates.email.trim().toLowerCase();
+    }
+
+    Object.assign(supplier, updates);
+    await supplier.save();
+
+    res.json(supplier);
+  } catch (error) {
+    console.error("Error updating supplier:", error.message);
+    res.status(500).json({ message: "Failed to update supplier" });
+  }
+};
+
+export const deleteSupplier = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supplier = await Supplier.findById(id);
+    if (!supplier) return res.status(404).json({ message: "Supplier not found" });
+
+    supplier.isActive = false;
+    await supplier.save();
+
+    res.json({ message: "Supplier deactivated", supplier });
+  } catch (error) {
+    console.error("Error deactivating supplier:", error.message);
+    res.status(500).json({ message: "Failed to deactivate supplier" });
+  }
+};
+
+export const getSupplierReceivings = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supplier = await Supplier.findById(id);
+    if (!supplier) return res.status(404).json({ message: "Supplier not found" });
+
+    const receivings = await InventoryReceiving.find({ supplier: id })
+      .populate({ path: "location", select: "name code" })
+      .populate({ path: "items.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "items.unit", select: "name abbreviation" })
+      .populate("receivedBy", "fullName")
+      .sort({ createdAt: -1 });
+
+    res.json(receivings);
+  } catch (error) {
+    console.error("Error fetching supplier receiving history:", error.message);
+    res.status(500).json({ message: "Failed to fetch supplier receiving history" });
   }
 };
 

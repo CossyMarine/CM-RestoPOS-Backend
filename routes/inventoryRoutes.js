@@ -8,6 +8,7 @@ import {
   createRecipe, getRecipes, getRecipeByMenuItem, updateRecipe, deleteRecipe,
   createProduction, getProductions, getProductionById, cancelProduction,
   createReceiving, getReceivings, getReceivingById, cancelReceiving,
+  createSupplier, getSuppliers, getSupplierById, updateSupplier, deleteSupplier, getSupplierReceivings,
   addStock, getStockHistory, logUsage, adjustStock, getUsageHistory,
   getUsageOverview, getItemUsageDetail, getInventorySummary,
 } from "../controllers/inventoryController.js";
@@ -54,6 +55,12 @@ router.post("/receiving", protect, authorize("admin"), requirePermission("invent
 router.get("/receiving", protect, authorize("admin", "accountant"), requirePermission("inventory"), getReceivings);
 router.get("/receiving/:id", protect, authorize("admin", "accountant"), requirePermission("inventory"), getReceivingById);
 router.delete("/receiving/:id", protect, authorize("admin"), requirePermission("inventory"), cancelReceiving);
+router.post("/suppliers", protect, authorize("admin"), requirePermission("inventory"), createSupplier);
+router.get("/suppliers", protect, authorize("admin", "accountant", "kitchen"), requirePermission("inventory"), getSuppliers);
+router.get("/suppliers/:id", protect, authorize("admin", "accountant", "kitchen"), requirePermission("inventory"), getSupplierById);
+router.put("/suppliers/:id", protect, authorize("admin"), requirePermission("inventory"), updateSupplier);
+router.delete("/suppliers/:id", protect, authorize("admin"), requirePermission("inventory"), deleteSupplier);
+router.get("/suppliers/:id/receivings", protect, authorize("admin", "accountant", "kitchen"), requirePermission("inventory"), getSupplierReceivings);
 router.put("/items/:id", protect, authorize("admin"), requirePermission("inventory"), updateItem);
 router.delete("/items/:id", protect, authorize("admin"), requirePermission("inventory"), deleteItem);
 
