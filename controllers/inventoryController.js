@@ -3,6 +3,7 @@ import InventoryUnit from "../models/InventoryUnit.js";
 import InventoryItem from "../models/InventoryItem.js";
 import InventoryLocation from "../models/InventoryLocation.js";
 import InventoryStock from "../models/InventoryStock.js";
+import InventoryTransfer from "../models/InventoryTransfer.js";
 import StockEntry from "../models/StockEntry.js";
 import InventoryUsageLog from "../models/InventoryUsageLog.js";
 
@@ -231,6 +232,112 @@ export const getAllLocationStock = async (req, res) => {
   } catch (error) {
     console.error("Error fetching all location stock:", error.message);
     res.status(500).json({ message: "Failed to fetch all location stock" });
+  }
+};
+
+/* =================================================
+   TRANSFERS — move stock between locations
+================================================= */
+
+// @desc    Create an inventory transfer between locations
+// @route   POST /api/inventory/transfers
+// @access  Protected — admin
+export const createTransfer = async (req, res) => {
+  try {
+    const { item: itemId, quantity, fromLocation, toLocation, note } = req.body;
+
+    if (!itemId || !quantity || !fromLocation || !toLocation) {
+      return res.status(400).json({ message: "item, quantity, fromLocation and toLocation are required" });
+    }
+
+    if (quantity <= 0) {
+      return res.status(400).json({ message: "quantity must be greater than 0" });
+    }
+
+    if (fromLocation === toLocation) {
+      return res.status(400).json({ message: "fromLocation and toLocation must be different" });
+    }
+
+    const item = await InventoryItem.findById(itemId);
+    if (!item) return res.status(404).json({ message: "Inventory item not found" });
+
+    const sourceLocation = await InventoryLocation.findById(fromLocation);
+    const destinationLocation = await InventoryLocation.findById(toLocation);
+    if (!sourceLocation || !destinationLocation) {
+      return res.status(404).json({ message: "Inventory location not found" });
+    }
+
+    const sourceBalance = await ensureLocationStockBalance(itemId, sourceLocation._id);
+    const destinationBalance = await ensureLocationStockBalance(itemId, destinationLocation._id);
+
+    if (sourceBalance.quantity < quantity) {
+      return res.status(400).json({ message: "Source location does not have enough stock" });
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      sourceBalance.quantity -= quantity;
+      destinationBalance.quantity += quantity;
+      await sourceBalance.save({ session });
+      await destinationBalance.save({ session });
+
+      const transfer = await InventoryTransfer.create(
+        [{
+          item: itemId,
+          quantity,
+          fromLocation: sourceLocation._id,
+          toLocation: destinationLocation._id,
+          transferredBy: req.user._id,
+          note: note || "",
+        }],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      const populatedTransfer = await InventoryTransfer.findById(transfer[0]._id)
+        .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+        .populate("fromLocation", "name code")
+        .populate("toLocation", "name code")
+        .populate("transferredBy", "fullName");
+
+      res.status(201).json(populatedTransfer);
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  } catch (error) {
+    console.error("Error creating inventory transfer:", error.message);
+    res.status(500).json({ message: "Failed to create inventory transfer" });
+  }
+};
+
+// @desc    Get inventory transfer history
+// @route   GET /api/inventory/transfers
+// @access  Protected — admin, accountant
+export const getTransfers = async (req, res) => {
+  try {
+    const { item, fromLocation, toLocation } = req.query;
+    const filter = {};
+    if (item) filter.item = item;
+    if (fromLocation) filter.fromLocation = fromLocation;
+    if (toLocation) filter.toLocation = toLocation;
+
+    const transfers = await InventoryTransfer.find(filter)
+      .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("fromLocation", "name code")
+      .populate("toLocation", "name code")
+      .populate("transferredBy", "fullName")
+      .sort({ createdAt: -1 });
+
+    res.json(transfers);
+  } catch (error) {
+    console.error("Error fetching inventory transfers:", error.message);
+    res.status(500).json({ message: "Failed to fetch inventory transfers" });
   }
 };
 

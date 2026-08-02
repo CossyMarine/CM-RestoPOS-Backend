@@ -4,6 +4,7 @@ import {
   getUnits, createUnit, deleteUnit, getLocations, createLocation, updateLocation, deleteLocation,
   getItems, createItem, updateItem, deleteItem,
   getLocationStock, getItemLocationStock, getAllLocationStock,
+  createTransfer, getTransfers,
   addStock, getStockHistory, logUsage, adjustStock, getUsageHistory,
   getUsageOverview, getItemUsageDetail, getInventorySummary,
 } from "../controllers/inventoryController.js";
@@ -35,6 +36,8 @@ router.post("/items", protect, authorize("admin"), requirePermission("inventory"
 router.get("/stock/locations/:locationId", protect, authorize("admin", "accountant"), requirePermission("inventory"), getLocationStock);
 router.get("/stock/items/:itemId", protect, authorize("admin", "accountant"), requirePermission("inventory"), getItemLocationStock);
 router.get("/stock/locations", protect, authorize("admin", "accountant"), requirePermission("inventory"), getAllLocationStock);
+router.post("/transfers", protect, authorize("admin"), requirePermission("inventory"), createTransfer);
+router.get("/transfers", protect, authorize("admin", "accountant"), requirePermission("inventory"), getTransfers);
 router.put("/items/:id", protect, authorize("admin"), requirePermission("inventory"), updateItem);
 router.delete("/items/:id", protect, authorize("admin"), requirePermission("inventory"), deleteItem);
 
