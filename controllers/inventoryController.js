@@ -12,9 +12,12 @@ import Production from "../models/Production.js";
 import InventoryReceiving from "../models/InventoryReceiving.js";
 import Supplier from "../models/Supplier.js";
 import PurchaseOrder from "../models/PurchaseOrder.js";
+import InventoryWaste from "../models/InventoryWaste.js";
+import InventoryBatch from "../models/InventoryBatch.js";
 import mongoose from "mongoose";
 const resolveInventoryLocation = async (locationId, fallbackName) => {
   if (locationId) {
+    if (!isValidObjectId(locationId)) throw new Error("Invalid inventory location id");
     const location = await InventoryLocation.findById(locationId);
     if (!location) {
       throw new Error("Inventory location not found");
@@ -33,12 +36,142 @@ const resolveInventoryLocation = async (locationId, fallbackName) => {
   return fallbackLocation;
 };
 
-const ensureLocationStockBalance = async (itemId, locationId) => {
-  let balance = await InventoryStock.findOne({ item: itemId, location: locationId });
+const ensureLocationStockBalance = async (itemId, locationId, session = null) => {
+  let balance = await InventoryStock.findOne({ item: itemId, location: locationId }).session(session);
   if (!balance) {
-    balance = await InventoryStock.create({ item: itemId, location: locationId, quantity: 0 });
+    const created = await InventoryStock.create([{ item: itemId, location: locationId, quantity: 0, unbatchedQuantity: 0 }], { session });
+    balance = created[0];
   }
   return balance;
+};
+
+const isValidObjectId = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return false;
+  }
+  return mongoose.Types.ObjectId.isValid(String(value));
+};
+
+const requireObjectId = (value, label) => {
+  if (!isValidObjectId(value)) throw new Error(`Invalid ${label} id`);
+  return value;
+};
+
+const initializeUnbatchedQuantity = async (stock, session = null) => {
+  if (stock.unbatchedQuantity !== undefined && stock.unbatchedQuantity !== null) return stock;
+  const [batchTotal] = await InventoryBatch.aggregate([
+    { $match: { inventoryItem: stock.item, location: stock.location, status: { $ne: "cancelled" } } },
+    { $group: { _id: null, quantity: { $sum: "$quantity" } } },
+  ]).session(session);
+  const unbatchedQuantity = Number(stock.quantity) - Number(batchTotal?.quantity || 0);
+  if (unbatchedQuantity < -0.000001) throw new Error("Inventory batch reconciliation required");
+  stock.unbatchedQuantity = Math.max(0, unbatchedQuantity);
+  await stock.save({ session });
+  return stock;
+};
+
+const getBatchStatus = (batchDoc, now = new Date()) => {
+  if (batchDoc.status === "cancelled") {
+    return "cancelled";
+  }
+  if (Number(batchDoc.quantity) <= 0) {
+    return "depleted";
+  }
+  if (batchDoc.expiryDate && new Date(batchDoc.expiryDate) < now) {
+    return "expired";
+  }
+  return "active";
+};
+
+const syncBatchStatus = async (batchDoc, session = null) => {
+  const nextStatus = getBatchStatus(batchDoc);
+  if (batchDoc.status !== nextStatus) {
+    batchDoc.status = nextStatus;
+    await batchDoc.save({ session });
+  }
+  return batchDoc;
+};
+
+const buildBatchNumber = async (inventoryItemId, locationId, suppliedBatchNumber, session = null) => {
+  const normalized = typeof suppliedBatchNumber === "string" ? suppliedBatchNumber.trim() : "";
+  if (normalized) {
+    const duplicate = await InventoryBatch.findOne({
+      inventoryItem: inventoryItemId,
+      location: locationId,
+      batchNumber: { $regex: `^${normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+    }).session(session);
+    if (duplicate) {
+      throw new Error("Batch number already exists");
+    }
+    return normalized;
+  }
+
+  const generated = `BATCH-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const duplicate = await InventoryBatch.findOne({ inventoryItem: inventoryItemId, location: locationId, batchNumber: generated }).session(session);
+  if (duplicate) {
+    return buildBatchNumber(inventoryItemId, locationId, "", session);
+  }
+  return generated;
+};
+
+const consumeBatchesForQuantity = async ({ inventoryItemId, locationId, requiredQuantity, stockBalance, session = null }) => {
+  const now = new Date();
+  await initializeUnbatchedQuantity(stockBalance, session);
+  const query = {
+    inventoryItem: inventoryItemId,
+    location: locationId,
+    quantity: { $gt: 0 },
+    status: { $ne: "cancelled" },
+    $or: [{ expiryDate: null }, { expiryDate: { $gte: now } }],
+  };
+
+  const batches = await InventoryBatch.find(query).sort({ createdAt: 1 }).session(session);
+  batches.sort((a, b) => (a.expiryDate ? new Date(a.expiryDate) : new Date(8640000000000000)) - (b.expiryDate ? new Date(b.expiryDate) : new Date(8640000000000000)) || new Date(a.createdAt) - new Date(b.createdAt));
+
+  let remaining = Number(requiredQuantity);
+  const batchUsage = [];
+  for (const batch of batches) {
+    if (remaining <= 0) break;
+    const available = Number(batch.quantity);
+    if (available <= 0) continue;
+
+    const consumed = Math.min(available, remaining);
+    batch.quantity = Number(batch.quantity) - consumed;
+    remaining -= consumed;
+    batch.status = getBatchStatus(batch, now);
+    await batch.save({ session });
+    batchUsage.push({ batch: batch._id, quantityConsumed: consumed });
+  }
+
+  const legacyQuantityConsumed = Math.min(Number(stockBalance.unbatchedQuantity), remaining);
+  stockBalance.unbatchedQuantity -= legacyQuantityConsumed;
+  remaining -= legacyQuantityConsumed;
+  if (remaining > 0) throw new Error("Insufficient stock");
+
+  return { batchUsage, legacyQuantityConsumed };
+};
+
+const restoreBatchQuantity = async (batchId, quantity, session = null) => {
+  const batch = await InventoryBatch.findById(batchId).session(session);
+  if (!batch) {
+    throw new Error("Batch not found");
+  }
+  batch.quantity = Number(batch.quantity) + Number(quantity);
+  batch.status = getBatchStatus(batch);
+  await batch.save({ session });
+  return batch;
+};
+
+const restoreConsumptionPlan = async ({ stockBalance, batchUsage = [], legacyQuantityConsumed = 0, session = null }) => {
+  for (const usage of batchUsage) await restoreBatchQuantity(usage.batch, usage.quantityConsumed, session);
+  await initializeUnbatchedQuantity(stockBalance, session);
+  stockBalance.unbatchedQuantity += Number(legacyQuantityConsumed || 0);
+};
+
+const requireInventoryIds = (payload, fields) => {
+  for (const [field, label] of fields) {
+    if (payload[field] !== undefined && payload[field] !== null && payload[field] !== "") requireObjectId(payload[field], label);
+  }
 };
 
 export const consumeRecipeIngredientsForOrder = async (order, reqUserId, session = null) => {
@@ -99,7 +232,7 @@ export const consumeRecipeIngredientsForOrder = async (order, reqUserId, session
       return { consumed: false, reason: "Inventory item not found" };
     }
 
-    const kitchenBalance = await ensureLocationStockBalance(inventoryItem._id, kitchenLocation._id);
+    const kitchenBalance = await ensureLocationStockBalance(inventoryItem._id, kitchenLocation._id, session);
     kitchenBalanceMap.set(String(inventoryItem._id), kitchenBalance);
 
     if (kitchenBalance.quantity < plan.quantity) {
@@ -116,6 +249,13 @@ export const consumeRecipeIngredientsForOrder = async (order, reqUserId, session
     }
 
     const balance = kitchenBalanceMap.get(String(inventoryItem._id));
+    const allocation = await consumeBatchesForQuantity({
+      inventoryItemId: inventoryItem._id,
+      locationId: kitchenLocation._id,
+      requiredQuantity: plan.quantity,
+      stockBalance: balance,
+      session,
+    });
     balance.quantity -= plan.quantity;
     await balance.save({ session });
 
@@ -126,12 +266,15 @@ export const consumeRecipeIngredientsForOrder = async (order, reqUserId, session
     const usageLog = await InventoryUsageLog.create(
       [{
         item: inventoryItem._id,
+        location: kitchenLocation._id,
         quantity: plan.quantity,
         reason: "used",
         costPerUnit: inventoryItem.costPerUnit,
         totalValue,
         recordedBy: reqUserId,
         note: `Recipe consumption for order ${order._id}`,
+        batchUsage: allocation.batchUsage,
+        legacyQuantityConsumed: allocation.legacyQuantityConsumed,
       }],
       { session }
     );
@@ -209,6 +352,11 @@ export const createReceiving = async (req, res) => {
   try {
     const { supplierName, supplier, purchaseOrder, referenceNumber, location, items, note } = req.body;
 
+    requireObjectId(location, "location");
+    if (supplier) requireObjectId(supplier, "supplier");
+    if (purchaseOrder) requireObjectId(purchaseOrder, "purchase order");
+    for (const item of items || []) requireInventoryIds(item, [["inventoryItem", "inventory item"], ["unit", "unit"]]);
+
     const payload = { location, items };
     await validateReceivingPayload(payload);
 
@@ -245,13 +393,42 @@ export const createReceiving = async (req, res) => {
       }
     }
 
-    const normalizedItems = items.map((item) => ({
-      inventoryItem: item.inventoryItem,
-      quantity: Number(item.quantity),
-      unit: item.unit,
-      costPerUnit: Number(item.costPerUnit),
-      totalCost: Number(item.quantity) * Number(item.costPerUnit),
-    }));
+    const normalizedItems = [];
+    for (const item of items) {
+      const normalizedItem = {
+        inventoryItem: item.inventoryItem,
+        quantity: Number(item.quantity),
+        unit: item.unit,
+        costPerUnit: Number(item.costPerUnit),
+        totalCost: Number(item.quantity) * Number(item.costPerUnit),
+        batchNumber: item.batchNumber ? String(item.batchNumber).trim() : "",
+        manufacturingDate: undefined,
+        expiryDate: undefined,
+        batchNote: item.batchNote || "",
+      };
+
+      if (item.manufacturingDate) {
+        const manufacturingDate = new Date(item.manufacturingDate);
+        if (Number.isNaN(manufacturingDate.getTime())) {
+          throw new Error("Invalid manufacturing date");
+        }
+        normalizedItem.manufacturingDate = manufacturingDate;
+      }
+
+      if (item.expiryDate) {
+        const expiryDate = new Date(item.expiryDate);
+        if (Number.isNaN(expiryDate.getTime())) {
+          throw new Error("Invalid expiry date");
+        }
+        normalizedItem.expiryDate = expiryDate;
+      }
+
+      if (normalizedItem.manufacturingDate && normalizedItem.expiryDate && normalizedItem.expiryDate < normalizedItem.manufacturingDate) {
+        throw new Error("Expiry date cannot be earlier than manufacturing date");
+      }
+
+      normalizedItems.push(normalizedItem);
+    }
 
     if (purchaseOrderDoc) {
       const poItemMap = new Map(purchaseOrderDoc.items.map((item) => [String(item.inventoryItem), item]));
@@ -285,7 +462,7 @@ export const createReceiving = async (req, res) => {
         },
       ], { session });
 
-      for (const item of normalizedItems) {
+      for (const [index, item] of normalizedItems.entries()) {
         const inventoryItem = await InventoryItem.findById(item.inventoryItem).session(session);
         if (!inventoryItem) {
           throw new Error("Inventory item not found");
@@ -304,6 +481,38 @@ export const createReceiving = async (req, res) => {
         inventoryItem.costPerUnit = item.costPerUnit;
         await inventoryItem.save({ session });
 
+        const hasBatchInfo = Boolean(item.batchNumber || item.batchNote || item.manufacturingDate || item.expiryDate);
+        if (hasBatchInfo) {
+          const batchNumber = await buildBatchNumber(item.inventoryItem, locationDoc._id, item.batchNumber, session);
+          const batch = await InventoryBatch.create([
+            {
+              batchNumber,
+              inventoryItem: item.inventoryItem,
+              location: locationDoc._id,
+              quantity: item.quantity,
+              unit: item.unit,
+              costPerUnit: item.costPerUnit,
+              manufacturingDate: item.manufacturingDate,
+              expiryDate: item.expiryDate,
+              supplier: supplierDoc?._id,
+              receiving: receiving[0]._id,
+              status: getBatchStatus({ quantity: item.quantity, expiryDate: item.expiryDate, status: "active" }),
+              note: item.batchNote || "",
+            },
+          ], { session });
+          receiving[0].items[index].batch = batch[0]._id;
+        } else {
+          // New receipts are always traceable; generated batches preserve the
+          // old payload shape while keeping legacy stock separate.
+          const batchNumber = await buildBatchNumber(item.inventoryItem, locationDoc._id, "", session);
+          const batch = await InventoryBatch.create([{
+            batchNumber, inventoryItem: item.inventoryItem, location: locationDoc._id,
+            quantity: item.quantity, unit: item.unit, costPerUnit: item.costPerUnit,
+            supplier: supplierDoc?._id, receiving: receiving[0]._id, status: "active", note: "",
+          }], { session });
+          receiving[0].items[index].batch = batch[0]._id;
+        }
+
         await StockEntry.create([
           {
             item: item.inventoryItem,
@@ -311,10 +520,14 @@ export const createReceiving = async (req, res) => {
             costPerUnit: item.costPerUnit,
             totalCost: item.totalCost,
             addedBy: req.user._id,
+            location: locationDoc._id,
+            batch: receiving[0].items[index].batch,
             note: `Receiving ${receiving[0]._id}`,
           },
         ], { session });
       }
+
+      await receiving[0].save({ session });
 
       if (purchaseOrderDoc) {
         for (const item of normalizedItems) {
@@ -387,6 +600,18 @@ export const createReceiving = async (req, res) => {
     if (error.message === "Duplicate inventory item in receiving") {
       return res.status(400).json({ message: error.message });
     }
+    if (error.message === "Invalid manufacturing date") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Invalid expiry date") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Expiry date cannot be earlier than manufacturing date") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Batch number already exists") {
+      return res.status(400).json({ message: error.message });
+    }
     if (error.message === "Purchase order not found") {
       return res.status(404).json({ message: error.message });
     }
@@ -457,6 +682,7 @@ export const getReceivingById = async (req, res) => {
 export const cancelReceiving = async (req, res) => {
   try {
     const { id } = req.params;
+    requireObjectId(id, "receiving");
     const receiving = await InventoryReceiving.findById(id);
 
     if (!receiving) {
@@ -486,11 +712,42 @@ export const cancelReceiving = async (req, res) => {
           throw new Error("Cannot cancel receiving because stock would become negative");
         }
 
+        await initializeUnbatchedQuantity(stockBalance, session);
+        if (item.batch) {
+          const batch = await InventoryBatch.findById(item.batch).session(session);
+          if (!batch || batch.status === "cancelled" || Number(batch.quantity) < Number(item.quantity)) {
+            throw new Error("Cannot cancel receiving because its batch stock was used");
+          }
+          batch.quantity -= Number(item.quantity);
+          batch.status = Number(batch.quantity) === 0 ? "cancelled" : getBatchStatus(batch);
+          await batch.save({ session });
+        } else if (Number(stockBalance.unbatchedQuantity) < Number(item.quantity)) {
+          throw new Error("Cannot cancel receiving because its legacy stock was used");
+        } else {
+          stockBalance.unbatchedQuantity -= Number(item.quantity);
+        }
+
         stockBalance.quantity -= item.quantity;
         await stockBalance.save({ session });
 
         inventoryItem.currentStock -= item.quantity;
         await inventoryItem.save({ session });
+      }
+
+      if (receiving.purchaseOrder) {
+        const purchaseOrder = await PurchaseOrder.findById(receiving.purchaseOrder).session(session);
+        if (!purchaseOrder) throw new Error("Purchase order not found");
+        for (const receivedItem of receiving.items) {
+          const poItem = purchaseOrder.items.find((entry) => String(entry.inventoryItem) === String(receivedItem.inventoryItem));
+          if (!poItem || Number(poItem.quantityReceived) < Number(receivedItem.quantity)) {
+            throw new Error("Purchase order receiving reconciliation failed");
+          }
+          poItem.quantityReceived -= Number(receivedItem.quantity);
+        }
+        const allReceived = purchaseOrder.items.every((item) => Number(item.quantityReceived) >= Number(item.quantityOrdered));
+        const anyReceived = purchaseOrder.items.some((item) => Number(item.quantityReceived) > 0);
+        purchaseOrder.status = allReceived ? "received" : anyReceived ? "partially_received" : "ordered";
+        await purchaseOrder.save({ session });
       }
 
       receiving.status = "cancelled";
@@ -1033,6 +1290,320 @@ export const cancelPurchaseOrder = async (req, res) => {
   }
 };
 
+const validateWastePayload = async (payload) => {
+  const { item, location, quantity, unit, reason } = payload;
+
+  if (!item) {
+    throw new Error("item is required");
+  }
+
+  if (!location) {
+    throw new Error("location is required");
+  }
+
+  if (!unit) {
+    throw new Error("unit is required");
+  }
+
+  if (!quantity || Number(quantity) <= 0) {
+    throw new Error("quantity must be greater than 0");
+  }
+
+  if (!reason) {
+    throw new Error("reason is required");
+  }
+
+  const inventoryItem = await InventoryItem.findById(item);
+  if (!inventoryItem) {
+    throw new Error("Inventory item not found");
+  }
+  if (!inventoryItem.isActive) {
+    throw new Error("Inventory item is not active");
+  }
+
+  const locationDoc = await InventoryLocation.findById(location);
+  if (!locationDoc) {
+    throw new Error("Inventory location not found");
+  }
+  if (!locationDoc.isActive) {
+    throw new Error("Inventory location is not active");
+  }
+
+  const unitDoc = await InventoryUnit.findById(unit);
+  if (!unitDoc) {
+    throw new Error("Unit not found");
+  }
+
+  if (String(inventoryItem.unit) !== String(unit)) {
+    throw new Error("Item unit must match the inventory item's configured unit");
+  }
+
+  const validReasons = ["damaged", "spoiled", "expired", "spillage", "other"];
+  if (!validReasons.includes(reason)) {
+    throw new Error("Invalid waste reason");
+  }
+
+  return { inventoryItem, locationDoc, unitDoc };
+};
+
+export const createWaste = async (req, res) => {
+  try {
+    const { item, location, quantity, unit, reason, note, batch: requestedBatch } = req.body;
+    requireInventoryIds(req.body, [["item", "inventory item"], ["location", "location"], ["unit", "unit"], ["batch", "batch"]]);
+    const payload = { item, location, quantity, unit, reason };
+    const { inventoryItem, locationDoc } = await validateWastePayload(payload);
+
+    const normalizedQuantity = Number(quantity);
+    const costPerUnit = Number(inventoryItem.costPerUnit || 0);
+    const totalValue = normalizedQuantity * costPerUnit;
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      let stockBalance = await InventoryStock.findOne({ item, location }).session(session);
+      if (!stockBalance) {
+        stockBalance = await InventoryStock.create([{ item, location, quantity: 0 }], { session });
+        stockBalance = stockBalance[0];
+      }
+
+      if (stockBalance.quantity < normalizedQuantity || inventoryItem.currentStock < normalizedQuantity) {
+        throw new Error("Insufficient stock");
+      }
+
+      let allocation;
+      if (requestedBatch) {
+        const batch = await InventoryBatch.findById(requestedBatch).session(session);
+        if (!batch || String(batch.inventoryItem) !== String(item) || String(batch.location) !== String(location) || batch.status === "cancelled" || (batch.expiryDate && new Date(batch.expiryDate) < new Date()) || Number(batch.quantity) < normalizedQuantity) {
+          throw new Error("Selected batch does not have enough usable stock");
+        }
+        batch.quantity -= normalizedQuantity;
+        batch.status = getBatchStatus(batch);
+        await batch.save({ session });
+        allocation = { batchUsage: [{ batch: batch._id, quantityConsumed: normalizedQuantity }], legacyQuantityConsumed: 0 };
+      } else {
+        allocation = await consumeBatchesForQuantity({ inventoryItemId: item, locationId: location, requiredQuantity: normalizedQuantity, stockBalance, session });
+      }
+
+      stockBalance.quantity -= normalizedQuantity;
+      await stockBalance.save({ session });
+
+      inventoryItem.currentStock -= normalizedQuantity;
+      await inventoryItem.save({ session });
+
+      const waste = await InventoryWaste.create(
+        [{
+          item,
+          location,
+          quantity: normalizedQuantity,
+          unit,
+          reason,
+          costPerUnit,
+          totalValue,
+          recordedBy: req.user._id,
+          note: note || "",
+          status: "recorded",
+          batch: allocation.batchUsage[0]?.batch,
+          batchUsage: allocation.batchUsage,
+          legacyQuantityConsumed: allocation.legacyQuantityConsumed,
+        }],
+        { session }
+      );
+
+      await InventoryUsageLog.create(
+        [{
+          item,
+          location: locationDoc._id,
+          quantity: normalizedQuantity,
+          reason: "waste",
+          costPerUnit,
+          totalValue,
+          recordedBy: req.user._id,
+          note: note || `Waste recorded for ${reason}`,
+          batchUsage: allocation.batchUsage,
+          legacyQuantityConsumed: allocation.legacyQuantityConsumed,
+        }],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      const populatedWaste = await InventoryWaste.findById(waste[0]._id)
+        .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+        .populate({ path: "unit", select: "name abbreviation" })
+        .populate({ path: "location", select: "name code" })
+        .populate("recordedBy", "fullName");
+
+      res.status(201).json(populatedWaste);
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  } catch (error) {
+    if (error.message === "item is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "location is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "unit is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "quantity must be greater than 0") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "reason is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Inventory item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Inventory item is not active") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Inventory location not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Inventory location is not active") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Unit not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Item unit must match the inventory item's configured unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Invalid waste reason") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Insufficient stock") {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("Error creating waste record:", error.message);
+    res.status(500).json({ message: "Failed to create waste record" });
+  }
+};
+
+export const getWastes = async (req, res) => {
+  try {
+    const wastes = await InventoryWaste.find()
+      .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "unit", select: "name abbreviation" })
+      .populate({ path: "location", select: "name code" })
+      .populate("recordedBy", "fullName")
+      .sort({ createdAt: -1 });
+
+    res.json(wastes);
+  } catch (error) {
+    console.error("Error fetching waste records:", error.message);
+    res.status(500).json({ message: "Failed to fetch waste records" });
+  }
+};
+
+export const getWasteById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    requireObjectId(id, "waste");
+    const waste = await InventoryWaste.findById(id)
+      .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "unit", select: "name abbreviation" })
+      .populate({ path: "location", select: "name code" })
+      .populate("recordedBy", "fullName");
+
+    if (!waste) {
+      return res.status(404).json({ message: "Waste record not found" });
+    }
+
+    res.json(waste);
+  } catch (error) {
+    console.error("Error fetching waste record:", error.message);
+    res.status(500).json({ message: "Failed to fetch waste record" });
+  }
+};
+
+export const cancelWaste = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const waste = await InventoryWaste.findById(id);
+
+    if (!waste) {
+      return res.status(404).json({ message: "Waste record not found" });
+    }
+
+    if (waste.status === "cancelled") {
+      return res.status(400).json({ message: "Waste record is already cancelled" });
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const inventoryItem = await InventoryItem.findById(waste.item).session(session);
+      if (!inventoryItem) {
+        throw new Error("Inventory item not found");
+      }
+
+      const stockBalance = await InventoryStock.findOne({ item: waste.item, location: waste.location }).session(session);
+      if (!stockBalance) {
+        throw new Error("Inventory stock balance not found");
+      }
+
+      await initializeUnbatchedQuantity(stockBalance, session);
+      stockBalance.quantity += waste.quantity;
+      await restoreConsumptionPlan({ stockBalance, batchUsage: waste.batchUsage, legacyQuantityConsumed: waste.legacyQuantityConsumed, session });
+      await stockBalance.save({ session });
+
+      inventoryItem.currentStock += waste.quantity;
+      await inventoryItem.save({ session });
+
+      waste.status = "cancelled";
+      await waste.save({ session });
+
+      await InventoryUsageLog.create(
+        [{
+          item: waste.item,
+          location: waste.location,
+          quantity: waste.quantity,
+          reason: "waste",
+          costPerUnit: waste.costPerUnit,
+          totalValue: waste.totalValue,
+          recordedBy: req.user._id,
+          note: `Waste reversal for ${waste._id}`,
+          batchUsage: waste.batchUsage,
+          legacyQuantityConsumed: waste.legacyQuantityConsumed,
+        }],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      const populatedWaste = await InventoryWaste.findById(waste._id)
+        .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+        .populate({ path: "unit", select: "name abbreviation" })
+        .populate({ path: "location", select: "name code" })
+        .populate("recordedBy", "fullName");
+
+      res.json(populatedWaste);
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  } catch (error) {
+    if (error.message === "Inventory item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Inventory stock balance not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    console.error("Error cancelling waste record:", error.message);
+    res.status(500).json({ message: "Failed to cancel waste record" });
+  }
+};
+
 /* =================================================
    UNITS — admin-defined measurement units
 ================================================= */
@@ -1108,7 +1679,9 @@ const validateProductionPayload = async (payload) => {
 
 export const createProduction = async (req, res) => {
   try {
-    const { producedItem, menuItem, recipe, quantityProduced, unit, ingredientsUsed, location, note, status } = req.body;
+    const { producedItem, menuItem, recipe, quantityProduced, unit, ingredientsUsed, location, note, status, batchNumber, manufacturingDate, expiryDate } = req.body;
+    requireInventoryIds(req.body, [["producedItem", "produced item"], ["menuItem", "menu item"], ["recipe", "recipe"], ["unit", "unit"], ["location", "location"]]);
+    for (const ingredient of ingredientsUsed || []) requireInventoryIds(ingredient, [["inventoryItem", "inventory item"], ["unit", "unit"]]);
 
     const payload = { producedItem, quantityProduced, unit, ingredientsUsed };
     const { producedItemDoc } = await validateProductionPayload(payload);
@@ -1139,17 +1712,28 @@ export const createProduction = async (req, res) => {
             balanceDoc = balanceDoc[0];
           }
 
-          if (balanceDoc.quantity < Number(ingredient.quantityUsed)) {
+          const quantityUsed = Number(ingredient.quantityUsed);
+          if (balanceDoc.quantity < quantityUsed || inventoryItem.currentStock < quantityUsed) {
             throw new Error(`Insufficient stock for ${inventoryItem.name}`);
           }
 
           const costPerUnit = inventoryItem.costPerUnit || 0;
+          const batchConsumption = await consumeBatchesForQuantity({
+            inventoryItemId: ingredient.inventoryItem,
+            locationId: productionLocation._id,
+            requiredQuantity: quantityUsed,
+            stockBalance: balanceDoc,
+            session,
+          });
+
           ingredientUsageEntries.push({
             inventoryItem: ingredient.inventoryItem,
-            quantityUsed: Number(ingredient.quantityUsed),
+            quantityUsed,
             unit: ingredient.unit,
             costPerUnit,
-            totalCost: Number(ingredient.quantityUsed) * costPerUnit,
+            totalCost: quantityUsed * costPerUnit,
+            batchUsage: batchConsumption.batchUsage,
+            legacyQuantityConsumed: batchConsumption.legacyQuantityConsumed,
           });
         }
 
@@ -1197,6 +1781,20 @@ export const createProduction = async (req, res) => {
         producedItemDoc.currentStock += Number(quantityProduced);
         await producedItemDoc.save({ session });
 
+        const parsedManufacturingDate = manufacturingDate ? new Date(manufacturingDate) : new Date();
+        const parsedExpiryDate = expiryDate ? new Date(expiryDate) : undefined;
+        if (Number.isNaN(parsedManufacturingDate.getTime()) || (parsedExpiryDate && Number.isNaN(parsedExpiryDate.getTime())) || (parsedExpiryDate && parsedExpiryDate < parsedManufacturingDate)) {
+          throw new Error("Invalid production batch dates");
+        }
+        const totalIngredientCost = ingredientUsageEntries.reduce((sum, ingredient) => sum + Number(ingredient.totalCost), 0);
+        const outputCostPerUnit = totalIngredientCost / Number(quantityProduced);
+        const outputBatchNumber = await buildBatchNumber(producedItem, productionLocation._id, batchNumber, session);
+        const producedBatch = await InventoryBatch.create([{
+          batchNumber: outputBatchNumber, inventoryItem: producedItem, location: productionLocation._id,
+          quantity: Number(quantityProduced), unit, costPerUnit: outputCostPerUnit,
+          manufacturingDate: parsedManufacturingDate, expiryDate: parsedExpiryDate, status: "active", note: note || "",
+        }], { session });
+
         production = await Production.create([
           {
             producedItem,
@@ -1209,9 +1807,12 @@ export const createProduction = async (req, res) => {
             producedBy: req.user._id,
             note: note || "",
             status: "completed",
+            producedBatch: producedBatch[0]._id,
           },
         ], { session });
         production = production[0];
+        producedBatch[0].production = production._id;
+        await producedBatch[0].save({ session });
 
         await session.commitTransaction();
         session.endSession();
@@ -1380,11 +1981,16 @@ export const cancelProduction = async (req, res) => {
             throw new Error("Ingredient stock balance not found");
           }
 
+          await initializeUnbatchedQuantity(balanceDoc, session);
           balanceDoc.quantity += ingredient.quantityUsed;
           await balanceDoc.save({ session });
 
           inventoryItem.currentStock += ingredient.quantityUsed;
           await inventoryItem.save({ session });
+
+          if (Array.isArray(ingredient.batchUsage)) {
+            await restoreConsumptionPlan({ stockBalance: balanceDoc, batchUsage: ingredient.batchUsage, legacyQuantityConsumed: ingredient.legacyQuantityConsumed, session });
+          }
         }
 
         const producedItemDoc = await InventoryItem.findById(production.producedItem).session(session);
@@ -1406,6 +2012,19 @@ export const cancelProduction = async (req, res) => {
 
         producedItemDoc.currentStock -= production.quantityProduced;
         await producedItemDoc.save({ session });
+
+        if (production.producedBatch) {
+          const producedBatch = await InventoryBatch.findById(production.producedBatch).session(session);
+          if (!producedBatch || Number(producedBatch.quantity) < Number(production.quantityProduced)) {
+            throw new Error("Cannot cancel production because produced batch stock was used");
+          }
+          producedBatch.quantity -= Number(production.quantityProduced);
+          producedBatch.status = "cancelled";
+          await producedBatch.save({ session });
+        }
+
+        production.status = "cancelled";
+        await production.save({ session });
 
         await session.commitTransaction();
         session.endSession();
@@ -1661,6 +2280,7 @@ export const getAllLocationStock = async (req, res) => {
 export const createTransfer = async (req, res) => {
   try {
     const { item: itemId, quantity, fromLocation, toLocation, note } = req.body;
+    requireInventoryIds(req.body, [["item", "inventory item"], ["fromLocation", "source location"], ["toLocation", "destination location"]]);
 
     if (!itemId || !quantity || !fromLocation || !toLocation) {
       return res.status(400).json({ message: "item, quantity, fromLocation and toLocation are required" });
@@ -1683,21 +2303,41 @@ export const createTransfer = async (req, res) => {
       return res.status(404).json({ message: "Inventory location not found" });
     }
 
-    const sourceBalance = await ensureLocationStockBalance(itemId, sourceLocation._id);
-    const destinationBalance = await ensureLocationStockBalance(itemId, destinationLocation._id);
-
-    if (sourceBalance.quantity < quantity) {
-      return res.status(400).json({ message: "Source location does not have enough stock" });
-    }
-
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
+      const sourceBalance = await ensureLocationStockBalance(itemId, sourceLocation._id, session);
+      const destinationBalance = await ensureLocationStockBalance(itemId, destinationLocation._id, session);
+      if (Number(sourceBalance.quantity) < Number(quantity)) throw new Error("Source location does not have enough stock");
+      const allocation = await consumeBatchesForQuantity({ inventoryItemId: itemId, locationId: sourceLocation._id, requiredQuantity: Number(quantity), stockBalance: sourceBalance, session });
       sourceBalance.quantity -= quantity;
       destinationBalance.quantity += quantity;
       await sourceBalance.save({ session });
       await destinationBalance.save({ session });
+
+      const batchTransfers = [];
+      for (const usage of allocation.batchUsage) {
+        const sourceBatch = await InventoryBatch.findById(usage.batch).session(session);
+        let destinationBatch = await InventoryBatch.findOne({ inventoryItem: itemId, location: destinationLocation._id, batchNumber: sourceBatch.batchNumber }).session(session);
+        if (!destinationBatch) {
+          destinationBatch = (await InventoryBatch.create([{
+            batchNumber: sourceBatch.batchNumber, inventoryItem: itemId, location: destinationLocation._id,
+            quantity: 0, unit: sourceBatch.unit, costPerUnit: sourceBatch.costPerUnit,
+            manufacturingDate: sourceBatch.manufacturingDate, expiryDate: sourceBatch.expiryDate,
+            supplier: sourceBatch.supplier, status: "active", note: sourceBatch.note,
+          }], { session }))[0];
+        }
+        destinationBatch.quantity += Number(usage.quantityConsumed);
+        destinationBatch.status = getBatchStatus(destinationBatch);
+        await destinationBatch.save({ session });
+        batchTransfers.push({ batch: usage.batch, quantity: usage.quantityConsumed, destinationBatch: destinationBatch._id });
+      }
+      if (allocation.legacyQuantityConsumed) {
+        await initializeUnbatchedQuantity(destinationBalance, session);
+        destinationBalance.unbatchedQuantity += allocation.legacyQuantityConsumed;
+        await destinationBalance.save({ session });
+      }
 
       const transfer = await InventoryTransfer.create(
         [{
@@ -1707,6 +2347,8 @@ export const createTransfer = async (req, res) => {
           toLocation: destinationLocation._id,
           transferredBy: req.user._id,
           note: note || "",
+          batchTransfers,
+          legacyQuantity: allocation.legacyQuantityConsumed,
         }],
         { session }
       );
@@ -1727,6 +2369,7 @@ export const createTransfer = async (req, res) => {
       throw error;
     }
   } catch (error) {
+    if (error.message === "Source location does not have enough stock" || error.message === "Insufficient stock") return res.status(400).json({ message: error.message });
     console.error("Error creating inventory transfer:", error.message);
     res.status(500).json({ message: "Failed to create inventory transfer" });
   }
@@ -2114,7 +2757,8 @@ export const deleteItem = async (req, res) => {
 // @access  Protected — admin
 export const addStock = async (req, res) => {
   try {
-    const { item: itemId, quantity, costPerUnit, note, locationId } = req.body;
+    const { item: itemId, quantity, costPerUnit, note, locationId, batchNumber, manufacturingDate, expiryDate } = req.body;
+    requireInventoryIds(req.body, [["item", "inventory item"], ["locationId", "location"]]);
     if (!itemId || !quantity || costPerUnit === undefined) {
       return res.status(400).json({ message: "item, quantity and costPerUnit are required" });
     }
@@ -2126,27 +2770,31 @@ export const addStock = async (req, res) => {
     if (!item) return res.status(404).json({ message: "Inventory item not found" });
 
     const location = await resolveInventoryLocation(locationId, "Store");
-    const stockBalance = await ensureLocationStockBalance(itemId, location._id);
-
     const totalCost = quantity * costPerUnit;
-
-    const entry = await StockEntry.create({
-      item: itemId,
-      quantity,
-      costPerUnit,
-      totalCost,
-      addedBy: req.user._id,
-      note: note || "",
-    });
-
-    stockBalance.quantity += quantity;
-    await stockBalance.save();
-
-    item.currentStock += quantity;
-    item.costPerUnit = costPerUnit; // latest purchase price becomes the running valuation cost
-    await item.save();
-
-    res.status(201).json({ entry, item });
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const stockBalance = await ensureLocationStockBalance(itemId, location._id, session);
+      stockBalance.quantity += Number(quantity);
+      await stockBalance.save({ session });
+      item.currentStock += Number(quantity);
+      item.costPerUnit = costPerUnit;
+      await item.save({ session });
+      const parsedManufacturingDate = manufacturingDate ? new Date(manufacturingDate) : undefined;
+      const parsedExpiryDate = expiryDate ? new Date(expiryDate) : undefined;
+      if ((parsedManufacturingDate && Number.isNaN(parsedManufacturingDate.getTime())) || (parsedExpiryDate && Number.isNaN(parsedExpiryDate.getTime()))) throw new Error("Invalid batch date");
+      const batch = (await InventoryBatch.create([{
+        batchNumber: await buildBatchNumber(itemId, location._id, batchNumber, session), inventoryItem: itemId, location: location._id,
+        quantity: Number(quantity), unit: item.unit, costPerUnit: Number(costPerUnit), manufacturingDate: parsedManufacturingDate, expiryDate: parsedExpiryDate,
+        status: "active", note: note || "",
+      }], { session }))[0];
+      const entry = (await StockEntry.create([{ item: itemId, location: location._id, batch: batch._id, quantity, costPerUnit, totalCost, addedBy: req.user._id, note: note || "" }], { session }))[0];
+      await session.commitTransaction();
+      session.endSession();
+      res.status(201).json({ entry, item, batch });
+    } catch (error) {
+      await session.abortTransaction(); session.endSession(); throw error;
+    }
   } catch (error) {
     if (error.message === "Inventory location not found" || error.message.includes("Default location")) {
       return res.status(404).json({ message: error.message });
@@ -2190,6 +2838,7 @@ export const getStockHistory = async (req, res) => {
 export const logUsage = async (req, res) => {
   try {
     const { item: itemId, quantity, reason, note, locationId } = req.body;
+    requireInventoryIds(req.body, [["item", "inventory item"], ["locationId", "location"]]);
     if (!itemId || !quantity) {
       return res.status(400).json({ message: "item and quantity are required" });
     }
@@ -2204,31 +2853,18 @@ export const logUsage = async (req, res) => {
     if (!item) return res.status(404).json({ message: "Inventory item not found" });
 
     const location = await resolveInventoryLocation(locationId, "Kitchen");
-    const stockBalance = await ensureLocationStockBalance(itemId, location._id);
-
-    if (stockBalance.quantity - quantity < 0) {
-      return res.status(400).json({ message: "Location stock balance cannot be negative" });
-    }
-
     const totalValue = quantity * item.costPerUnit;
-
-    const log = await InventoryUsageLog.create({
-      item: itemId,
-      quantity,
-      reason: reason || "used",
-      costPerUnit: item.costPerUnit,
-      totalValue,
-      recordedBy: req.user._id,
-      note: note || "",
-    });
-
-    stockBalance.quantity -= quantity;
-    await stockBalance.save();
-
-    item.currentStock -= quantity;
-    await item.save();
-
-    res.status(201).json({ log, item });
+    const session = await mongoose.startSession(); session.startTransaction();
+    try {
+      const stockBalance = await ensureLocationStockBalance(itemId, location._id, session);
+      if (Number(stockBalance.quantity) < Number(quantity) || Number(item.currentStock) < Number(quantity)) throw new Error("Insufficient stock");
+      const allocation = await consumeBatchesForQuantity({ inventoryItemId: itemId, locationId: location._id, requiredQuantity: Number(quantity), stockBalance, session });
+      stockBalance.quantity -= Number(quantity); await stockBalance.save({ session });
+      item.currentStock -= Number(quantity); await item.save({ session });
+      const log = (await InventoryUsageLog.create([{ item: itemId, location: location._id, quantity, reason: reason || "used", costPerUnit: item.costPerUnit, totalValue, recordedBy: req.user._id, note: note || "", batchUsage: allocation.batchUsage, legacyQuantityConsumed: allocation.legacyQuantityConsumed }], { session }))[0];
+      await session.commitTransaction(); session.endSession();
+      res.status(201).json({ log, item });
+    } catch (error) { await session.abortTransaction(); session.endSession(); throw error; }
   } catch (error) {
     if (error.message === "Inventory location not found" || error.message.includes("Default location")) {
       return res.status(404).json({ message: error.message });
@@ -2244,6 +2880,7 @@ export const logUsage = async (req, res) => {
 export const adjustStock = async (req, res) => {
   try {
     const { item: itemId, delta, note, locationId } = req.body;
+    requireInventoryIds(req.body, [["item", "inventory item"], ["locationId", "location"]]);
     if (!itemId || delta === undefined || delta === 0) {
       return res.status(400).json({ message: "item and a non-zero delta are required" });
     }
@@ -2252,31 +2889,25 @@ export const adjustStock = async (req, res) => {
     if (!item) return res.status(404).json({ message: "Inventory item not found" });
 
     const location = await resolveInventoryLocation(locationId, "Store");
-    const stockBalance = await ensureLocationStockBalance(itemId, location._id);
-
-    if (stockBalance.quantity + delta < 0) {
-      return res.status(400).json({ message: "Location stock balance cannot be negative" });
-    }
-
     const totalValue = delta * item.costPerUnit;
-
-    const log = await InventoryUsageLog.create({
-      item: itemId,
-      quantity: delta,
-      reason: "adjustment",
-      costPerUnit: item.costPerUnit,
-      totalValue,
-      recordedBy: req.user._id,
-      note: note || "",
-    });
-
-    stockBalance.quantity += delta;
-    await stockBalance.save();
-
-    item.currentStock += delta;
-    await item.save();
-
-    res.status(201).json({ log, item });
+    const session = await mongoose.startSession(); session.startTransaction();
+    try {
+      const stockBalance = await ensureLocationStockBalance(itemId, location._id, session);
+      let allocation = { batchUsage: [], legacyQuantityConsumed: 0 };
+      if (Number(delta) < 0) {
+        const requiredQuantity = Math.abs(Number(delta));
+        if (Number(stockBalance.quantity) < requiredQuantity || Number(item.currentStock) < requiredQuantity) throw new Error("Location stock balance cannot be negative");
+        allocation = await consumeBatchesForQuantity({ inventoryItemId: itemId, locationId: location._id, requiredQuantity, stockBalance, session });
+      } else {
+        await initializeUnbatchedQuantity(stockBalance, session);
+        stockBalance.unbatchedQuantity += Number(delta);
+      }
+      stockBalance.quantity += Number(delta); await stockBalance.save({ session });
+      item.currentStock += Number(delta); await item.save({ session });
+      const log = (await InventoryUsageLog.create([{ item: itemId, location: location._id, quantity: delta, reason: "adjustment", costPerUnit: item.costPerUnit, totalValue, recordedBy: req.user._id, note: note || "", batchUsage: allocation.batchUsage, legacyQuantityConsumed: allocation.legacyQuantityConsumed }], { session }))[0];
+      await session.commitTransaction(); session.endSession();
+      res.status(201).json({ log, item });
+    } catch (error) { await session.abortTransaction(); session.endSession(); throw error; }
   } catch (error) {
     if (error.message === "Inventory location not found" || error.message.includes("Default location")) {
       return res.status(404).json({ message: error.message });
@@ -2543,4 +3174,79 @@ export const getItemUsageDetail = async (req, res) => {
     console.error("Error fetching item usage detail:", error.message);
     res.status(500).json({ message: "Failed to fetch item usage detail" });
   }
+};
+
+/* =================================================
+   BATCHES / INTEGRITY
+================================================= */
+export const getBatches = async (req, res) => {
+  try {
+    const { item, location, supplier, status, expiringBefore } = req.query;
+    requireInventoryIds(req.query, [["item", "inventory item"], ["location", "location"], ["supplier", "supplier"]]);
+    const filter = {};
+    if (item) filter.inventoryItem = item;
+    if (location) filter.location = location;
+    if (supplier) filter.supplier = supplier;
+    if (status) filter.status = status;
+    if (expiringBefore) {
+      const date = new Date(expiringBefore);
+      if (Number.isNaN(date.getTime())) throw new Error("Invalid expiry date");
+      filter.expiryDate = { $lte: date };
+    }
+    const batches = await InventoryBatch.find(filter)
+      .populate("inventoryItem", "name unit")
+      .populate("location", "name code")
+      .populate("supplier", "name")
+      .sort({ expiryDate: 1, createdAt: 1 });
+    res.json(batches);
+  } catch (error) {
+    if (error.message.startsWith("Invalid ")) return res.status(400).json({ message: error.message });
+    res.status(500).json({ message: "Failed to fetch batches" });
+  }
+};
+
+export const getBatchById = async (req, res) => {
+  try {
+    requireObjectId(req.params.id, "batch");
+    const batch = await InventoryBatch.findById(req.params.id)
+      .populate({ path: "inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("location", "name code").populate("supplier", "name")
+      .populate("receiving").populate("production");
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+    res.json(batch);
+  } catch (error) {
+    if (error.message.startsWith("Invalid ")) return res.status(400).json({ message: error.message });
+    res.status(500).json({ message: "Failed to fetch batch" });
+  }
+};
+
+export const getExpiringBatches = async (req, res) => {
+  try {
+    const days = Math.max(0, Number(req.query.days ?? 30));
+    if (!Number.isFinite(days)) return res.status(400).json({ message: "days must be a number" });
+    const now = new Date();
+    const until = new Date(now.getTime() + days * 86400000);
+    const batches = await InventoryBatch.find({ quantity: { $gt: 0 }, status: { $ne: "cancelled" }, expiryDate: { $lte: until } })
+      .populate("inventoryItem", "name").populate("location", "name code").sort({ expiryDate: 1 });
+    res.json({ now, until, batches });
+  } catch (error) { res.status(500).json({ message: "Failed to fetch expiring batches" }); }
+};
+
+export const getInventoryIntegrity = async (req, res) => {
+  try {
+    const stocks = await InventoryStock.find().populate("item", "name").populate("location", "name code");
+    const issues = [];
+    const rows = [];
+    for (const stock of stocks) {
+      const batches = await InventoryBatch.find({ inventoryItem: stock.item._id, location: stock.location._id, status: { $ne: "cancelled" } }).select("quantity");
+      const batchQuantity = batches.reduce((sum, batch) => sum + Number(batch.quantity), 0);
+      const unbatchedQuantity = stock.unbatchedQuantity === undefined || stock.unbatchedQuantity === null ? null : Number(stock.unbatchedQuantity);
+      const expected = unbatchedQuantity === null ? null : batchQuantity + unbatchedQuantity;
+      const variance = expected === null ? null : Number(stock.quantity) - expected;
+      const row = { item: stock.item, location: stock.location, quantity: stock.quantity, batchQuantity, unbatchedQuantity, variance };
+      rows.push(row);
+      if (unbatchedQuantity === null || Math.abs(variance) > 0.000001) issues.push(row);
+    }
+    res.json({ healthy: issues.length === 0, issues, rows });
+  } catch (error) { res.status(500).json({ message: "Failed to build inventory integrity report" }); }
 };

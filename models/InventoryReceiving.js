@@ -7,6 +7,11 @@ const receivingItemSchema = new mongoose.Schema(
     unit: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryUnit", required: true },
     costPerUnit: { type: Number, required: true, min: 0 },
     totalCost: { type: Number, required: true, min: 0 },
+    batchNumber: { type: String, trim: true, default: "" },
+    manufacturingDate: { type: Date },
+    expiryDate: { type: Date },
+    batchNote: { type: String, trim: true, default: "" },
+    batch: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryBatch" },
   },
   { _id: false }
 );
@@ -17,6 +22,7 @@ const inventoryReceivingSchema = new mongoose.Schema(
     
     supplierName: { type: String, trim: true, default: "" },
     supplier: { type: mongoose.Schema.Types.ObjectId, ref: "Supplier" },
+    purchaseOrder: { type: mongoose.Schema.Types.ObjectId, ref: "PurchaseOrder" },
     referenceNumber: { type: String, trim: true, default: "" },
     location: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryLocation", required: true },
     items: { type: [receivingItemSchema], required: true, default: [] },

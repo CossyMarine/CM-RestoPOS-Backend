@@ -1,5 +1,6 @@
 // routes/inventoryRoutes.js
 import express from "express";
+import mongoose from "mongoose";
 import {
   getUnits, createUnit, deleteUnit, getLocations, createLocation, updateLocation, deleteLocation,
   getItems, createItem, updateItem, deleteItem,
@@ -10,12 +11,37 @@ import {
   createReceiving, getReceivings, getReceivingById, cancelReceiving,
   createSupplier, getSuppliers, getSupplierById, updateSupplier, deleteSupplier, getSupplierReceivings,
   createPurchaseOrder, getPurchaseOrders, getPurchaseOrderById, updatePurchaseOrder, orderPurchaseOrder, cancelPurchaseOrder,
+  createWaste, getWastes, getWasteById, cancelWaste,
   addStock, getStockHistory, logUsage, adjustStock, getUsageHistory,
   getUsageOverview, getItemUsageDetail, getInventorySummary,
+  getBatches, getBatchById, getExpiringBatches, getInventoryIntegrity,
 } from "../controllers/inventoryController.js";
 import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
+
+// Reject malformed identifiers before controllers issue a Mongoose query. The
+// recursive walk also covers receiving/production arrays without changing the
+// established request payloads.
+const inventoryIdFields = new Set([
+  "id", "item", "itemId", "inventoryItem", "location", "locationId",
+  "fromLocation", "toLocation", "unit", "supplier", "purchaseOrder",
+  "menuItem", "menuItemId", "recipe", "batch",
+]);
+const validateInventoryObjectIds = (req, res, next) => {
+  let invalid = null;
+  const visit = (value, key = "") => {
+    if (invalid || value === undefined || value === null || value === "") return;
+    if (Array.isArray(value)) return value.forEach((entry) => visit(entry));
+    if (typeof value === "object") return Object.entries(value).forEach(([childKey, childValue]) => visit(childValue, childKey));
+    if (inventoryIdFields.has(key) && !mongoose.Types.ObjectId.isValid(String(value))) invalid = key;
+  };
+  visit(req.params);
+  visit(req.query);
+  visit(req.body);
+  return invalid ? res.status(400).json({ message: `Invalid ${invalid} id` }) : next();
+};
+router.use(validateInventoryObjectIds);
 
 // Kitchen keeps its existing free access. Accountant only gets in if granted
 // the "inventory" permission; admin always passes.
@@ -68,6 +94,10 @@ router.get("/purchase-orders/:id", protect, authorize("admin", "accountant"), re
 router.put("/purchase-orders/:id", protect, authorize("admin"), requirePermission("inventory"), updatePurchaseOrder);
 router.post("/purchase-orders/:id/order", protect, authorize("admin"), requirePermission("inventory"), orderPurchaseOrder);
 router.post("/purchase-orders/:id/cancel", protect, authorize("admin"), requirePermission("inventory"), cancelPurchaseOrder);
+router.post("/waste", protect, authorize("admin", "kitchen"), requirePermission("inventory"), createWaste);
+router.get("/waste", protect, authorize("admin", "accountant", "kitchen"), requirePermission("inventory"), getWastes);
+router.get("/waste/:id", protect, authorize("admin", "accountant", "kitchen"), requirePermission("inventory"), getWasteById);
+router.delete("/waste/:id", protect, authorize("admin", "kitchen"), requirePermission("inventory"), cancelWaste);
 router.put("/items/:id", protect, authorize("admin"), requirePermission("inventory"), updateItem);
 router.delete("/items/:id", protect, authorize("admin"), requirePermission("inventory"), deleteItem);
 
@@ -81,5 +111,9 @@ router.post("/usage", protect, authorize("admin", "kitchen"), logUsage);
 router.post("/adjust", protect, authorize("admin"), requirePermission("inventory"), adjustStock);
 
 router.get("/summary", protect, authorize("admin", "accountant"), requirePermission("inventory"), getInventorySummary);
+router.get("/integrity", protect, authorize("admin"), requirePermission("inventory"), getInventoryIntegrity);
+router.get("/batches/expiring", protect, authorize("admin", "accountant"), requirePermission("inventory"), getExpiringBatches);
+router.get("/batches", protect, authorize("admin", "accountant"), requirePermission("inventory"), getBatches);
+router.get("/batches/:id", protect, authorize("admin", "accountant"), requirePermission("inventory"), getBatchById);
 
 export default router;

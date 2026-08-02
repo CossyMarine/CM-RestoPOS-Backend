@@ -7,6 +7,11 @@ const ingredientUsageSchema = new mongoose.Schema(
     unit: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryUnit", required: true },
     costPerUnit: { type: Number, required: true, default: 0 },
     totalCost: { type: Number, required: true, default: 0 },
+    batchUsage: [{
+      batch: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryBatch", required: true },
+      quantityConsumed: { type: Number, required: true, min: 0.000001 },
+    }],
+    legacyQuantityConsumed: { type: Number, default: 0, min: 0 },
   },
   { _id: false }
 );
@@ -27,6 +32,7 @@ const productionSchema = new mongoose.Schema(
       enum: ["draft", "pending", "completed", "cancelled"],
       default: "completed",
     },
+    producedBatch: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryBatch" },
   },
   { timestamps: true }
 );

@@ -8,6 +8,12 @@ const inventoryTransferSchema = new mongoose.Schema(
     fromLocation: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryLocation", required: true },
     toLocation: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryLocation", required: true },
     transferredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    batchTransfers: [{
+      batch: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryBatch", required: true },
+      quantity: { type: Number, required: true, min: 0.000001 },
+      destinationBatch: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryBatch" },
+    }],
+    legacyQuantity: { type: Number, default: 0, min: 0 },
     note: { type: String, trim: true, default: "" },
   },
   { timestamps: true }
