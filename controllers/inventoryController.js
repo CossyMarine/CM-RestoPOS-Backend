@@ -6,7 +6,7 @@ import InventoryStock from "../models/InventoryStock.js";
 import InventoryTransfer from "../models/InventoryTransfer.js";
 import StockEntry from "../models/StockEntry.js";
 import InventoryUsageLog from "../models/InventoryUsageLog.js";
-
+import mongoose from "mongoose";
 const resolveInventoryLocation = async (locationId, fallbackName) => {
   if (locationId) {
     const location = await InventoryLocation.findById(locationId);
