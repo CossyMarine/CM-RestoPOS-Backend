@@ -1,7 +1,9 @@
 // routes/inventoryRoutes.js
 import express from "express";
 import {
-  getUnits, createUnit, deleteUnit, getItems, createItem, updateItem, deleteItem,
+  getUnits, createUnit, deleteUnit, getLocations, createLocation, updateLocation, deleteLocation,
+  getItems, createItem, updateItem, deleteItem,
+  getLocationStock, getItemLocationStock, getAllLocationStock,
   addStock, getStockHistory, logUsage, adjustStock, getUsageHistory,
   getUsageOverview, getItemUsageDetail, getInventorySummary,
 } from "../controllers/inventoryController.js";
@@ -22,8 +24,17 @@ router.get("/units", protect, authorize("admin", "accountant"), requirePermissio
 router.post("/units", protect, authorize("admin"), requirePermission("inventory"), createUnit);
 router.delete("/units/:id", protect, authorize("admin"), requirePermission("inventory"), deleteUnit);
 
+router.get("/locations", protect, authorize("admin", "accountant"), requirePermission("inventory"), getLocations);
+router.post("/locations", protect, authorize("admin"), requirePermission("inventory"), createLocation);
+router.put("/locations/:id", protect, authorize("admin"), requirePermission("inventory"), updateLocation);
+router.delete("/locations/:id", protect, authorize("admin"), requirePermission("inventory"), deleteLocation);
+
 router.get("/items", protect, authorize("admin", "kitchen", "accountant"), requirePermission("inventory"), getItems);
 router.post("/items", protect, authorize("admin"), requirePermission("inventory"), createItem);
+
+router.get("/stock/locations/:locationId", protect, authorize("admin", "accountant"), requirePermission("inventory"), getLocationStock);
+router.get("/stock/items/:itemId", protect, authorize("admin", "accountant"), requirePermission("inventory"), getItemLocationStock);
+router.get("/stock/locations", protect, authorize("admin", "accountant"), requirePermission("inventory"), getAllLocationStock);
 router.put("/items/:id", protect, authorize("admin"), requirePermission("inventory"), updateItem);
 router.delete("/items/:id", protect, authorize("admin"), requirePermission("inventory"), deleteItem);
 

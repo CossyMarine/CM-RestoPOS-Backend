@@ -1,8 +1,38 @@
 // controllers/inventoryController.js
 import InventoryUnit from "../models/InventoryUnit.js";
 import InventoryItem from "../models/InventoryItem.js";
+import InventoryLocation from "../models/InventoryLocation.js";
+import InventoryStock from "../models/InventoryStock.js";
 import StockEntry from "../models/StockEntry.js";
 import InventoryUsageLog from "../models/InventoryUsageLog.js";
+
+const resolveInventoryLocation = async (locationId, fallbackName) => {
+  if (locationId) {
+    const location = await InventoryLocation.findById(locationId);
+    if (!location) {
+      throw new Error("Inventory location not found");
+    }
+    return location;
+  }
+
+  const fallbackLocation = await InventoryLocation.findOne({
+    name: { $regex: `^${fallbackName}$`, $options: "i" },
+  });
+
+  if (!fallbackLocation) {
+    throw new Error(`Default location '${fallbackName}' not found`);
+  }
+
+  return fallbackLocation;
+};
+
+const ensureLocationStockBalance = async (itemId, locationId) => {
+  let balance = await InventoryStock.findOne({ item: itemId, location: locationId });
+  if (!balance) {
+    balance = await InventoryStock.create({ item: itemId, location: locationId, quantity: 0 });
+  }
+  return balance;
+};
 
 /* =================================================
    UNITS — admin-defined measurement units
@@ -58,6 +88,153 @@ export const deleteUnit = async (req, res) => {
 };
 
 /* =================================================
+   LOCATIONS — physical inventory locations
+================================================= */
+
+// @desc    Get all inventory locations
+// @route   GET /api/inventory/locations
+// @access  Protected — admin, accountant
+export const getLocations = async (req, res) => {
+  try {
+    const locations = await InventoryLocation.find().sort({ name: 1 });
+    res.json(locations);
+  } catch (error) {
+    console.error("Error fetching inventory locations:", error.message);
+    res.status(500).json({ message: "Failed to fetch inventory locations" });
+  }
+};
+
+// @desc    Create an inventory location
+// @route   POST /api/inventory/locations
+// @access  Protected — admin
+export const createLocation = async (req, res) => {
+  try {
+    const { name, code } = req.body;
+    if (!name || !code) {
+      return res.status(400).json({ message: "Name and code are required" });
+    }
+
+    const location = await InventoryLocation.create({
+      name: name.trim(),
+      code: code.trim().toUpperCase(),
+    });
+
+    res.status(201).json(location);
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(400).json({ message: "Location name or code already exists" });
+    }
+    console.error("Error creating inventory location:", error.message);
+    res.status(500).json({ message: "Failed to create inventory location" });
+  }
+};
+
+// @desc    Update an inventory location
+// @route   PUT /api/inventory/locations/:id
+// @access  Protected — admin
+export const updateLocation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = {};
+
+    if (req.body.name !== undefined) updates.name = req.body.name.trim();
+    if (req.body.code !== undefined) updates.code = req.body.code.trim().toUpperCase();
+    if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ message: "No valid update fields provided" });
+    }
+
+    const location = await InventoryLocation.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!location) return res.status(404).json({ message: "Inventory location not found" });
+    res.json(location);
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(400).json({ message: "Location name or code already exists" });
+    }
+    console.error("Error updating inventory location:", error.message);
+    res.status(500).json({ message: "Failed to update inventory location" });
+  }
+};
+
+// @desc    Deactivate an inventory location
+// @route   DELETE /api/inventory/locations/:id
+// @access  Protected — admin
+export const deleteLocation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const location = await InventoryLocation.findByIdAndUpdate(id, { isActive: false }, { new: true });
+
+    if (!location) return res.status(404).json({ message: "Inventory location not found" });
+    res.json({ message: "Location deactivated", location });
+  } catch (error) {
+    console.error("Error deactivating inventory location:", error.message);
+    res.status(500).json({ message: "Failed to deactivate inventory location" });
+  }
+};
+
+/* =================================================
+   LOCATION STOCK — balances per item per location
+================================================= */
+
+// @desc    Get stock balances for a specific location
+// @route   GET /api/inventory/stock/locations/:locationId
+// @access  Protected — admin, accountant
+export const getLocationStock = async (req, res) => {
+  try {
+    const { locationId } = req.params;
+    const balances = await InventoryStock.find({ location: locationId })
+      .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("location", "name code")
+      .sort({ createdAt: -1 });
+
+    res.json(balances);
+  } catch (error) {
+    console.error("Error fetching location stock:", error.message);
+    res.status(500).json({ message: "Failed to fetch location stock" });
+  }
+};
+
+// @desc    Get all location balances for a specific inventory item
+// @route   GET /api/inventory/stock/items/:itemId
+// @access  Protected — admin, accountant
+export const getItemLocationStock = async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const balances = await InventoryStock.find({ item: itemId })
+      .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("location", "name code")
+      .sort({ createdAt: -1 });
+
+    res.json(balances);
+  } catch (error) {
+    console.error("Error fetching item location stock:", error.message);
+    res.status(500).json({ message: "Failed to fetch item location stock" });
+  }
+};
+
+// @desc    Get all location-specific inventory stock balances
+// @route   GET /api/inventory/stock/locations
+// @access  Protected — admin, accountant
+export const getAllLocationStock = async (req, res) => {
+  try {
+    const balances = await InventoryStock.find()
+      .populate({ path: "item", populate: { path: "unit", select: "name abbreviation" } })
+      .populate("location", "name code")
+      .sort({ createdAt: -1 });
+
+    res.json(balances);
+  } catch (error) {
+    console.error("Error fetching all location stock:", error.message);
+    res.status(500).json({ message: "Failed to fetch all location stock" });
+  }
+};
+
+/* =================================================
    ITEMS — admin-defined ingredients / stock catalog
 ================================================= */
 
@@ -70,7 +247,13 @@ export const getItems = async (req, res) => {
     const items = await InventoryItem.find(filter)
       .populate("unit", "name abbreviation")
       .sort({ category: 1, name: 1 });
-    res.json(items);
+
+    const responseItems = items.map((item) => ({
+      ...item.toObject(),
+      itemType: item.itemType || "raw_material",
+    }));
+
+    res.json(responseItems);
   } catch (error) {
     console.error("Error fetching inventory items:", error.message);
     res.status(500).json({ message: "Failed to fetch inventory items" });
@@ -82,13 +265,14 @@ export const getItems = async (req, res) => {
 // @access  Protected — admin
 export const createItem = async (req, res) => {
   try {
-    const { name, unit, category, costPerUnit, reorderLevel } = req.body;
+    const { name, unit, category, costPerUnit, reorderLevel, itemType } = req.body;
     if (!name || !unit) {
       return res.status(400).json({ message: "Name and unit are required" });
     }
     const item = await InventoryItem.create({
       name,
       unit,
+      itemType: itemType || "raw_material",
       category:     category || "General",
       costPerUnit:  costPerUnit || 0,
       reorderLevel: reorderLevel || 0,
@@ -107,11 +291,15 @@ export const createItem = async (req, res) => {
 export const updateItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const allowed = ["name", "unit", "category", "costPerUnit", "reorderLevel", "isActive"];
+    const allowed = ["name", "unit", "category", "costPerUnit", "reorderLevel", "isActive", "itemType"];
     const updates = {};
     allowed.forEach((key) => {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     });
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ message: "No valid update fields provided" });
+    }
 
     const item = await InventoryItem.findByIdAndUpdate(id, updates, {
       new: true,
@@ -160,7 +348,7 @@ export const deleteItem = async (req, res) => {
 // @access  Protected — admin
 export const addStock = async (req, res) => {
   try {
-    const { item: itemId, quantity, costPerUnit, note } = req.body;
+    const { item: itemId, quantity, costPerUnit, note, locationId } = req.body;
     if (!itemId || !quantity || costPerUnit === undefined) {
       return res.status(400).json({ message: "item, quantity and costPerUnit are required" });
     }
@@ -170,6 +358,9 @@ export const addStock = async (req, res) => {
 
     const item = await InventoryItem.findById(itemId);
     if (!item) return res.status(404).json({ message: "Inventory item not found" });
+
+    const location = await resolveInventoryLocation(locationId, "Store");
+    const stockBalance = await ensureLocationStockBalance(itemId, location._id);
 
     const totalCost = quantity * costPerUnit;
 
@@ -182,12 +373,18 @@ export const addStock = async (req, res) => {
       note: note || "",
     });
 
+    stockBalance.quantity += quantity;
+    await stockBalance.save();
+
     item.currentStock += quantity;
     item.costPerUnit = costPerUnit; // latest purchase price becomes the running valuation cost
     await item.save();
 
     res.status(201).json({ entry, item });
   } catch (error) {
+    if (error.message === "Inventory location not found" || error.message.includes("Default location")) {
+      return res.status(404).json({ message: error.message });
+    }
     console.error("Error adding stock:", error.message);
     res.status(500).json({ message: "Failed to add stock" });
   }
@@ -226,7 +423,7 @@ export const getStockHistory = async (req, res) => {
 // @access  Protected — admin, kitchen
 export const logUsage = async (req, res) => {
   try {
-    const { item: itemId, quantity, reason, note } = req.body;
+    const { item: itemId, quantity, reason, note, locationId } = req.body;
     if (!itemId || !quantity) {
       return res.status(400).json({ message: "item and quantity are required" });
     }
@@ -240,6 +437,13 @@ export const logUsage = async (req, res) => {
     const item = await InventoryItem.findById(itemId);
     if (!item) return res.status(404).json({ message: "Inventory item not found" });
 
+    const location = await resolveInventoryLocation(locationId, "Kitchen");
+    const stockBalance = await ensureLocationStockBalance(itemId, location._id);
+
+    if (stockBalance.quantity - quantity < 0) {
+      return res.status(400).json({ message: "Location stock balance cannot be negative" });
+    }
+
     const totalValue = quantity * item.costPerUnit;
 
     const log = await InventoryUsageLog.create({
@@ -252,11 +456,17 @@ export const logUsage = async (req, res) => {
       note: note || "",
     });
 
+    stockBalance.quantity -= quantity;
+    await stockBalance.save();
+
     item.currentStock -= quantity;
     await item.save();
 
     res.status(201).json({ log, item });
   } catch (error) {
+    if (error.message === "Inventory location not found" || error.message.includes("Default location")) {
+      return res.status(404).json({ message: error.message });
+    }
     console.error("Error logging usage:", error.message);
     res.status(500).json({ message: "Failed to log usage" });
   }
@@ -267,13 +477,20 @@ export const logUsage = async (req, res) => {
 // @access  Protected — admin
 export const adjustStock = async (req, res) => {
   try {
-    const { item: itemId, delta, note } = req.body;
+    const { item: itemId, delta, note, locationId } = req.body;
     if (!itemId || delta === undefined || delta === 0) {
       return res.status(400).json({ message: "item and a non-zero delta are required" });
     }
 
     const item = await InventoryItem.findById(itemId);
     if (!item) return res.status(404).json({ message: "Inventory item not found" });
+
+    const location = await resolveInventoryLocation(locationId, "Store");
+    const stockBalance = await ensureLocationStockBalance(itemId, location._id);
+
+    if (stockBalance.quantity + delta < 0) {
+      return res.status(400).json({ message: "Location stock balance cannot be negative" });
+    }
 
     const totalValue = delta * item.costPerUnit;
 
@@ -287,11 +504,17 @@ export const adjustStock = async (req, res) => {
       note: note || "",
     });
 
+    stockBalance.quantity += delta;
+    await stockBalance.save();
+
     item.currentStock += delta;
     await item.save();
 
     res.status(201).json({ log, item });
   } catch (error) {
+    if (error.message === "Inventory location not found" || error.message.includes("Default location")) {
+      return res.status(404).json({ message: error.message });
+    }
     console.error("Error adjusting stock:", error.message);
     res.status(500).json({ message: "Failed to adjust stock" });
   }
