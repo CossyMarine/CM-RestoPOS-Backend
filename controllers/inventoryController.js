@@ -8,6 +8,7 @@ import Recipe from "../models/Recipe.js";
 import MenuItem from "../models/MenuItem.js";
 import StockEntry from "../models/StockEntry.js";
 import InventoryUsageLog from "../models/InventoryUsageLog.js";
+import Production from "../models/Production.js";
 import mongoose from "mongoose";
 const resolveInventoryLocation = async (locationId, fallbackName) => {
   if (locationId) {
@@ -35,6 +36,522 @@ const ensureLocationStockBalance = async (itemId, locationId) => {
     balance = await InventoryStock.create({ item: itemId, location: locationId, quantity: 0 });
   }
   return balance;
+};
+
+export const consumeRecipeIngredientsForOrder = async (order, reqUserId, session = null) => {
+  if (!order || !order.items || order.items.length === 0) {
+    return { consumed: false, reason: "No items" };
+  }
+
+  const kitchenLocation = await InventoryLocation.findOne({
+    $or: [{ name: /^kitchen$/i }, { code: /^kitchen$/i }],
+  });
+
+  if (!kitchenLocation) {
+    return { consumed: false, reason: "Kitchen location not found" };
+  }
+
+  const consumptionPlan = [];
+  const seenItems = new Map();
+
+  for (const orderItem of order.items) {
+    const menuItemId = orderItem.menuItemId;
+    if (!menuItemId) continue;
+
+    if (!seenItems.has(String(menuItemId))) {
+      seenItems.set(String(menuItemId), true);
+    }
+
+    const recipe = await Recipe.findOne({ menuItem: menuItemId, isActive: true }).lean();
+    if (!recipe || !recipe.ingredients || recipe.ingredients.length === 0) {
+      continue;
+    }
+
+    for (const ingredient of recipe.ingredients) {
+      const requiredQuantity = Number(ingredient.quantity) * Number(orderItem.quantity);
+      if (!requiredQuantity || requiredQuantity <= 0) continue;
+
+      const existing = consumptionPlan.find((entry) => String(entry.inventoryItem) === String(ingredient.inventoryItem));
+      if (existing) {
+        existing.quantity += requiredQuantity;
+      } else {
+        consumptionPlan.push({
+          inventoryItem: ingredient.inventoryItem,
+          quantity: requiredQuantity,
+          unit: ingredient.unit,
+        });
+      }
+    }
+  }
+
+  if (consumptionPlan.length === 0) {
+    return { consumed: false, reason: "No active recipe ingredients" };
+  }
+
+  const kitchenBalanceMap = new Map();
+
+  for (const plan of consumptionPlan) {
+    const inventoryItem = await InventoryItem.findById(plan.inventoryItem);
+    if (!inventoryItem) {
+      return { consumed: false, reason: "Inventory item not found" };
+    }
+
+    const kitchenBalance = await ensureLocationStockBalance(inventoryItem._id, kitchenLocation._id);
+    kitchenBalanceMap.set(String(inventoryItem._id), kitchenBalance);
+
+    if (kitchenBalance.quantity < plan.quantity) {
+      return { consumed: false, reason: `Insufficient stock for ${inventoryItem.name}` };
+    }
+  }
+
+  const usageLogs = [];
+
+  for (const plan of consumptionPlan) {
+    const inventoryItem = await InventoryItem.findById(plan.inventoryItem);
+    if (!inventoryItem) {
+      return { consumed: false, reason: "Inventory item not found" };
+    }
+
+    const balance = kitchenBalanceMap.get(String(inventoryItem._id));
+    balance.quantity -= plan.quantity;
+    await balance.save({ session });
+
+    inventoryItem.currentStock -= plan.quantity;
+    await inventoryItem.save({ session });
+
+    const totalValue = plan.quantity * inventoryItem.costPerUnit;
+    const usageLog = await InventoryUsageLog.create(
+      [{
+        item: inventoryItem._id,
+        quantity: plan.quantity,
+        reason: "used",
+        costPerUnit: inventoryItem.costPerUnit,
+        totalValue,
+        recordedBy: reqUserId,
+        note: `Recipe consumption for order ${order._id}`,
+      }],
+      { session }
+    );
+
+    usageLogs.push(usageLog[0]);
+  }
+
+  return { consumed: true, logs: usageLogs, location: kitchenLocation };
+};
+
+const validateProductionPayload = async (payload) => {
+  const { producedItem, quantityProduced, unit, ingredientsUsed } = payload;
+
+  if (!producedItem) {
+    throw new Error("producedItem is required");
+  }
+
+  if (!quantityProduced || Number(quantityProduced) <= 0) {
+    throw new Error("quantityProduced must be greater than 0");
+  }
+
+  if (!unit) {
+    throw new Error("unit is required");
+  }
+
+  if (!Array.isArray(ingredientsUsed) || ingredientsUsed.length === 0) {
+    throw new Error("At least one ingredient is required");
+  }
+
+  const producedItemDoc = await InventoryItem.findById(producedItem);
+  if (!producedItemDoc) {
+    throw new Error("Produced item not found");
+  }
+
+  const producedUnit = await InventoryUnit.findById(unit);
+  if (!producedUnit) {
+    throw new Error("Unit not found");
+  }
+
+  if (String(producedItemDoc.unit) !== String(unit)) {
+    throw new Error("Produced item unit must match the provided unit");
+  }
+
+  const seenIngredients = new Set();
+
+  for (const ingredient of ingredientsUsed) {
+    if (!ingredient.inventoryItem) {
+      throw new Error("Each ingredient requires an inventoryItem");
+    }
+    if (!ingredient.unit) {
+      throw new Error("Each ingredient requires a unit");
+    }
+    if (!ingredient.quantityUsed || Number(ingredient.quantityUsed) <= 0) {
+      throw new Error("Each ingredient quantity must be greater than 0");
+    }
+
+    const inventoryItem = await InventoryItem.findById(ingredient.inventoryItem);
+    if (!inventoryItem) {
+      throw new Error("Ingredient inventory item not found");
+    }
+
+    const ingredientUnit = await InventoryUnit.findById(ingredient.unit);
+    if (!ingredientUnit) {
+      throw new Error("Ingredient unit not found");
+    }
+
+    if (String(inventoryItem.unit) !== String(ingredient.unit)) {
+      throw new Error("Ingredient unit must match the inventory item's configured unit");
+    }
+
+    const key = String(ingredient.inventoryItem);
+    if (seenIngredients.has(key)) {
+      throw new Error("Duplicate inventory item in production");
+    }
+    seenIngredients.add(key);
+  }
+
+  return { producedItemDoc };
+};
+
+export const createProduction = async (req, res) => {
+  try {
+    const { producedItem, menuItem, recipe, quantityProduced, unit, ingredientsUsed, location, note, status } = req.body;
+
+    const payload = { producedItem, quantityProduced, unit, ingredientsUsed };
+    const { producedItemDoc } = await validateProductionPayload(payload);
+
+    const productionStatus = status || "completed";
+    if (productionStatus === "cancelled") {
+      return res.status(400).json({ message: "Production cannot be created with cancelled status" });
+    }
+
+    const productionLocation = await resolveInventoryLocation(location, "Kitchen");
+    let production;
+
+    if (productionStatus === "completed") {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+
+      try {
+        const ingredientUsageEntries = [];
+        for (const ingredient of ingredientsUsed) {
+          const inventoryItem = await InventoryItem.findById(ingredient.inventoryItem).session(session);
+          if (!inventoryItem) {
+            throw new Error("Ingredient inventory item not found");
+          }
+
+          let balanceDoc = await InventoryStock.findOne({ item: ingredient.inventoryItem, location: productionLocation._id }).session(session);
+          if (!balanceDoc) {
+            balanceDoc = await InventoryStock.create([{ item: ingredient.inventoryItem, location: productionLocation._id, quantity: 0 }], { session });
+            balanceDoc = balanceDoc[0];
+          }
+
+          if (balanceDoc.quantity < Number(ingredient.quantityUsed)) {
+            throw new Error(`Insufficient stock for ${inventoryItem.name}`);
+          }
+
+          const costPerUnit = inventoryItem.costPerUnit || 0;
+          ingredientUsageEntries.push({
+            inventoryItem: ingredient.inventoryItem,
+            quantityUsed: Number(ingredient.quantityUsed),
+            unit: ingredient.unit,
+            costPerUnit,
+            totalCost: Number(ingredient.quantityUsed) * costPerUnit,
+          });
+        }
+
+        for (const ingredient of ingredientUsageEntries) {
+          const inventoryItem = await InventoryItem.findById(ingredient.inventoryItem).session(session);
+          if (!inventoryItem) {
+            throw new Error("Ingredient inventory item not found");
+          }
+
+          let balanceDoc = await InventoryStock.findOne({ item: ingredient.inventoryItem, location: productionLocation._id }).session(session);
+          if (!balanceDoc) {
+            balanceDoc = await InventoryStock.create([{ item: ingredient.inventoryItem, location: productionLocation._id, quantity: 0 }], { session });
+            balanceDoc = balanceDoc[0];
+          }
+
+          balanceDoc.quantity -= ingredient.quantityUsed;
+          await balanceDoc.save({ session });
+
+          inventoryItem.currentStock -= ingredient.quantityUsed;
+          await inventoryItem.save({ session });
+
+          await InventoryUsageLog.create(
+            [{
+              item: inventoryItem._id,
+              quantity: ingredient.quantityUsed,
+              reason: "used",
+              costPerUnit: ingredient.costPerUnit,
+              totalValue: ingredient.totalCost,
+              recordedBy: req.user._id,
+              note: `Production ${productionStatus}`,
+            }],
+            { session }
+          );
+        }
+
+        let producedBalanceDoc = await InventoryStock.findOne({ item: producedItem, location: productionLocation._id }).session(session);
+        if (!producedBalanceDoc) {
+          producedBalanceDoc = await InventoryStock.create([{ item: producedItem, location: productionLocation._id, quantity: 0 }], { session });
+          producedBalanceDoc = producedBalanceDoc[0];
+        }
+
+        producedBalanceDoc.quantity += Number(quantityProduced);
+        await producedBalanceDoc.save({ session });
+
+        producedItemDoc.currentStock += Number(quantityProduced);
+        await producedItemDoc.save({ session });
+
+        production = await Production.create([
+          {
+            producedItem,
+            menuItem,
+            recipe,
+            quantityProduced: Number(quantityProduced),
+            unit,
+            location: productionLocation._id,
+            ingredientsUsed: ingredientUsageEntries,
+            producedBy: req.user._id,
+            note: note || "",
+            status: "completed",
+          },
+        ], { session });
+        production = production[0];
+
+        await session.commitTransaction();
+        session.endSession();
+      } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        throw error;
+      }
+    } else {
+      production = await Production.create({
+        producedItem,
+        menuItem,
+        recipe,
+        quantityProduced: Number(quantityProduced),
+        unit,
+        location: productionLocation._id,
+        ingredientsUsed: ingredientsUsed.map((ingredient) => ({
+          inventoryItem: ingredient.inventoryItem,
+          quantityUsed: Number(ingredient.quantityUsed),
+          unit: ingredient.unit,
+          costPerUnit: 0,
+          totalCost: 0,
+        })),
+        producedBy: req.user._id,
+        note: note || "",
+        status: productionStatus,
+      });
+    }
+
+    const populatedProduction = await Production.findById(production._id)
+      .populate({ path: "producedItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "ingredientsUsed.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "ingredientsUsed.unit", select: "name abbreviation" })
+      .populate({ path: "unit", select: "name abbreviation" })
+      .populate({ path: "location", select: "name code" })
+      .populate("producedBy", "fullName")
+      .populate("menuItem", "name")
+      .populate("recipe", "note");
+
+    res.status(201).json(populatedProduction);
+  } catch (error) {
+    if (error.message === "producedItem is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "quantityProduced must be greater than 0") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "unit is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "At least one ingredient is required") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Produced item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Unit not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Produced item unit must match the provided unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient requires an inventoryItem") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient requires a unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Each ingredient quantity must be greater than 0") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Ingredient inventory item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Ingredient unit not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Ingredient unit must match the inventory item's configured unit") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Duplicate inventory item in production") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.message === "Inventory location not found" || error.message.includes("Default location")) {
+      return res.status(404).json({ message: error.message });
+    }
+    console.error("Error creating production:", error.message);
+    res.status(500).json({ message: "Failed to create production" });
+  }
+};
+
+export const getProductions = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+
+    const productions = await Production.find(filter)
+      .populate({ path: "producedItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "ingredientsUsed.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "ingredientsUsed.unit", select: "name abbreviation" })
+      .populate({ path: "unit", select: "name abbreviation" })
+      .populate({ path: "location", select: "name code" })
+      .populate("producedBy", "fullName")
+      .populate("menuItem", "name")
+      .populate("recipe", "note")
+      .sort({ createdAt: -1 });
+
+    res.json(productions);
+  } catch (error) {
+    console.error("Error fetching productions:", error.message);
+    res.status(500).json({ message: "Failed to fetch productions" });
+  }
+};
+
+export const getProductionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const production = await Production.findById(id)
+      .populate({ path: "producedItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "ingredientsUsed.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "ingredientsUsed.unit", select: "name abbreviation" })
+      .populate({ path: "unit", select: "name abbreviation" })
+      .populate({ path: "location", select: "name code" })
+      .populate("producedBy", "fullName")
+      .populate("menuItem", "name")
+      .populate("recipe", "note");
+
+    if (!production) {
+      return res.status(404).json({ message: "Production not found" });
+    }
+
+    res.json(production);
+  } catch (error) {
+    console.error("Error fetching production:", error.message);
+    res.status(500).json({ message: "Failed to fetch production" });
+  }
+};
+
+export const cancelProduction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const production = await Production.findById(id);
+
+    if (!production) {
+      return res.status(404).json({ message: "Production not found" });
+    }
+
+    if (production.status === "cancelled") {
+      return res.status(400).json({ message: "Production is already cancelled" });
+    }
+
+    if (production.status === "completed") {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+
+      try {
+        for (const ingredient of production.ingredientsUsed) {
+          const inventoryItem = await InventoryItem.findById(ingredient.inventoryItem).session(session);
+          if (!inventoryItem) {
+            throw new Error("Ingredient inventory item not found");
+          }
+
+          const balanceDoc = await InventoryStock.findOne({ item: ingredient.inventoryItem, location: production.location }).session(session);
+          if (!balanceDoc) {
+            throw new Error("Ingredient stock balance not found");
+          }
+
+          balanceDoc.quantity += ingredient.quantityUsed;
+          await balanceDoc.save({ session });
+
+          inventoryItem.currentStock += ingredient.quantityUsed;
+          await inventoryItem.save({ session });
+        }
+
+        const producedItemDoc = await InventoryItem.findById(production.producedItem).session(session);
+        if (!producedItemDoc) {
+          throw new Error("Produced item not found");
+        }
+
+        const producedBalanceDoc = await InventoryStock.findOne({ item: production.producedItem, location: production.location }).session(session);
+        if (!producedBalanceDoc) {
+          throw new Error("Produced item stock balance not found");
+        }
+
+        if (producedBalanceDoc.quantity < production.quantityProduced) {
+          throw new Error("Cannot cancel production because produced stock would become negative");
+        }
+
+        producedBalanceDoc.quantity -= production.quantityProduced;
+        await producedBalanceDoc.save({ session });
+
+        producedItemDoc.currentStock -= production.quantityProduced;
+        await producedItemDoc.save({ session });
+
+        await session.commitTransaction();
+        session.endSession();
+      } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        throw error;
+      }
+    }
+
+    production.status = "cancelled";
+    await production.save();
+
+    const populatedProduction = await Production.findById(production._id)
+      .populate({ path: "producedItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "ingredientsUsed.inventoryItem", populate: { path: "unit", select: "name abbreviation" } })
+      .populate({ path: "ingredientsUsed.unit", select: "name abbreviation" })
+      .populate({ path: "unit", select: "name abbreviation" })
+      .populate({ path: "location", select: "name code" })
+      .populate("producedBy", "fullName")
+      .populate("menuItem", "name")
+      .populate("recipe", "note");
+
+    res.json(populatedProduction);
+  } catch (error) {
+    if (error.message === "Ingredient inventory item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Produced item not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Ingredient stock balance not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Produced item stock balance not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.message === "Cannot cancel production because produced stock would become negative") {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("Error cancelling production:", error.message);
+    res.status(500).json({ message: "Failed to cancel production" });
+  }
 };
 
 /* =================================================

@@ -6,6 +6,7 @@ import {
   getLocationStock, getItemLocationStock, getAllLocationStock,
   createTransfer, getTransfers,
   createRecipe, getRecipes, getRecipeByMenuItem, updateRecipe, deleteRecipe,
+  createProduction, getProductions, getProductionById, cancelProduction,
   addStock, getStockHistory, logUsage, adjustStock, getUsageHistory,
   getUsageOverview, getItemUsageDetail, getInventorySummary,
 } from "../controllers/inventoryController.js";
@@ -44,6 +45,10 @@ router.get("/recipes", protect, authorize("admin", "accountant"), requirePermiss
 router.get("/recipes/:menuItemId", protect, authorize("admin", "accountant"), requirePermission("inventory"), getRecipeByMenuItem);
 router.put("/recipes/:id", protect, authorize("admin"), requirePermission("inventory"), updateRecipe);
 router.delete("/recipes/:id", protect, authorize("admin"), requirePermission("inventory"), deleteRecipe);
+router.post("/production", protect, authorize("admin", "kitchen"), requirePermission("inventory"), createProduction);
+router.get("/production", protect, authorize("admin", "kitchen", "accountant"), requirePermission("inventory"), getProductions);
+router.get("/production/:id", protect, authorize("admin", "kitchen", "accountant"), requirePermission("inventory"), getProductionById);
+router.delete("/production/:id", protect, authorize("admin", "kitchen"), requirePermission("inventory"), cancelProduction);
 router.put("/items/:id", protect, authorize("admin"), requirePermission("inventory"), updateItem);
 router.delete("/items/:id", protect, authorize("admin"), requirePermission("inventory"), deleteItem);
 
