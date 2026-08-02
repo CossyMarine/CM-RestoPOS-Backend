@@ -9,6 +9,7 @@ import {
   createProduction, getProductions, getProductionById, cancelProduction,
   createReceiving, getReceivings, getReceivingById, cancelReceiving,
   createSupplier, getSuppliers, getSupplierById, updateSupplier, deleteSupplier, getSupplierReceivings,
+  createPurchaseOrder, getPurchaseOrders, getPurchaseOrderById, updatePurchaseOrder, orderPurchaseOrder, cancelPurchaseOrder,
   addStock, getStockHistory, logUsage, adjustStock, getUsageHistory,
   getUsageOverview, getItemUsageDetail, getInventorySummary,
 } from "../controllers/inventoryController.js";
@@ -61,6 +62,12 @@ router.get("/suppliers/:id", protect, authorize("admin", "accountant", "kitchen"
 router.put("/suppliers/:id", protect, authorize("admin"), requirePermission("inventory"), updateSupplier);
 router.delete("/suppliers/:id", protect, authorize("admin"), requirePermission("inventory"), deleteSupplier);
 router.get("/suppliers/:id/receivings", protect, authorize("admin", "accountant", "kitchen"), requirePermission("inventory"), getSupplierReceivings);
+router.post("/purchase-orders", protect, authorize("admin"), requirePermission("inventory"), createPurchaseOrder);
+router.get("/purchase-orders", protect, authorize("admin", "accountant"), requirePermission("inventory"), getPurchaseOrders);
+router.get("/purchase-orders/:id", protect, authorize("admin", "accountant"), requirePermission("inventory"), getPurchaseOrderById);
+router.put("/purchase-orders/:id", protect, authorize("admin"), requirePermission("inventory"), updatePurchaseOrder);
+router.post("/purchase-orders/:id/order", protect, authorize("admin"), requirePermission("inventory"), orderPurchaseOrder);
+router.post("/purchase-orders/:id/cancel", protect, authorize("admin"), requirePermission("inventory"), cancelPurchaseOrder);
 router.put("/items/:id", protect, authorize("admin"), requirePermission("inventory"), updateItem);
 router.delete("/items/:id", protect, authorize("admin"), requirePermission("inventory"), deleteItem);
 
