@@ -3,6 +3,7 @@ import Order from "../models/Order.js";
 import Receipt from "../models/Receipt.js";
 import Shift from "../models/Shift.js";
 import User from "../models/User.js";
+import MenuItem from "../models/MenuItem.js";
 import { generateReceiptForOrder } from "../utils/generateReceipt.js";
 import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 
@@ -10,7 +11,7 @@ import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 // @route   POST /api/orders
 // @access  Protected — cashier, manager, admin, waiter
 export const createOrder = async (req, res) => {
-  const { tableNumber, waiterName, items, subtotal } = req.body;
+  const { tableNumber, waiterName, items } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: "Order must have at least one item" });
@@ -30,15 +31,55 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    const itemsWithSnapshot = items.map((i) => ({
-      menuItemId: i.menuItemId || i._id || null,
-      mealName: i.mealName,
-      imageUrl: i.imageUrl || null,
-      quantity: i.quantity,
-      unitPrice: i.unitPrice,
-      lineTotal: i.lineTotal,
-      ready: false,
-    }));
+    // Any line referencing a real menu item must use that item's real price —
+    // client-supplied price is only trusted for genuinely off-menu/manual
+    // lines (no menuItemId), which the data model explicitly supports.
+    const menuItemIds = items.map((i) => i.menuItemId || i._id).filter(Boolean);
+    const menuItems = menuItemIds.length
+      ? await MenuItem.find({ _id: { $in: menuItemIds } })
+      : [];
+    const menuItemsById = new Map(menuItems.map((m) => [String(m._id), m]));
+
+    const itemsWithSnapshot = items.map((i) => {
+      const menuItemId = i.menuItemId || i._id || null;
+      const quantity = Number(i.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error(`Invalid quantity for ${i.mealName || "an item"}`);
+      }
+
+      if (menuItemId) {
+        const menuItem = menuItemsById.get(String(menuItemId));
+        if (!menuItem) {
+          throw new Error(`Menu item not found: ${menuItemId}`);
+        }
+        return {
+          menuItemId: menuItem._id,
+          mealName: menuItem.name,
+          imageUrl: menuItem.imageUrl || null,
+          quantity,
+          unitPrice: menuItem.price,
+          lineTotal: Number((menuItem.price * quantity).toFixed(2)),
+          ready: false,
+        };
+      }
+
+      // Explicit manual/off-menu line — no catalog item to check against.
+      const unitPrice = Number(i.unitPrice);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new Error(`Invalid price for ${i.mealName || "a manual item"}`);
+      }
+      return {
+        menuItemId: null,
+        mealName: i.mealName,
+        imageUrl: i.imageUrl || null,
+        quantity,
+        unitPrice,
+        lineTotal: Number((unitPrice * quantity).toFixed(2)),
+        ready: false,
+      };
+    });
+
+    const subtotal = Number(itemsWithSnapshot.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
 
     // Staff-entered orders already have a waiter attached, so they go
     // straight into the kitchen queue instead of waiting on "pending".
@@ -59,7 +100,8 @@ export const createOrder = async (req, res) => {
     res.status(201).json({ order, receipt, items: order.items });
   } catch (error) {
     console.error("Error creating order:", error.message);
-    res.status(500).json({ message: "Failed to create order", error: error.message });
+    const isValidationError = /not found|Invalid quantity|Invalid price/.test(error.message);
+    res.status(isValidationError ? 400 : 500).json({ message: error.message || "Failed to create order", error: error.message });
   }
 };
 

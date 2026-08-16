@@ -1,6 +1,7 @@
 // controllers/customerOrderController.js
 import Order from "../models/Order.js";
 import Receipt from "../models/Receipt.js";
+import MenuItem from "../models/MenuItem.js";
 import { generateReceiptForOrder } from "../utils/generateReceipt.js";
 
 // @desc    Place an order — customer must be logged in (registered account)
@@ -13,17 +14,43 @@ export const createCustomerOrder = async (req, res) => {
   if (!items || items.length === 0) return res.status(400).json({ message: "Cart is empty" });
 
   try {
-    const itemsWithTotals = items.map((i) => ({
-      menuItemId: i.menuItemId || i.id || null,
-      mealName: i.mealName,
-      imageUrl: i.imageUrl || null,
-      quantity: i.quantity,
-      unitPrice: i.unitPrice,
-      lineTotal: i.quantity * i.unitPrice,
-      ready: false,
-    }));
+    // Never trust price, name, or image from the client — look every line
+    // up against the real menu so a tampered request can't set its own price.
+    const menuItemIds = items.map((i) => i.menuItemId || i.id).filter(Boolean);
+    if (menuItemIds.length !== items.length) {
+      return res.status(400).json({ message: "One or more items are missing a menu reference" });
+    }
 
-    const subtotal = itemsWithTotals.reduce((sum, i) => sum + i.lineTotal, 0);
+    const menuItems = await MenuItem.find({ _id: { $in: menuItemIds } });
+    const menuItemsById = new Map(menuItems.map((m) => [String(m._id), m]));
+
+    const itemsWithTotals = items.map((i) => {
+      const menuItemId = i.menuItemId || i.id;
+      const menuItem = menuItemsById.get(String(menuItemId));
+      if (!menuItem) {
+        throw new Error(`Menu item not found: ${menuItemId}`);
+      }
+      if (!menuItem.isAvailable) {
+        throw new Error(`${menuItem.name} is currently unavailable`);
+      }
+
+      const quantity = Number(i.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isInteger(quantity)) {
+        throw new Error(`Invalid quantity for ${menuItem.name}`);
+      }
+
+      return {
+        menuItemId: menuItem._id,
+        mealName: menuItem.name,
+        imageUrl: menuItem.imageUrl || null,
+        quantity,
+        unitPrice: menuItem.price,
+        lineTotal: Number((menuItem.price * quantity).toFixed(2)),
+        ready: false,
+      };
+    });
+
+    const subtotal = Number(itemsWithTotals.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
 
     const order = await Order.create({
       tableNumber,
@@ -46,10 +73,10 @@ export const createCustomerOrder = async (req, res) => {
     res.status(201).json({ order, receipt, billId: receipt.billId });
   } catch (error) {
     console.error("Error creating customer order:", error.message);
-    res.status(500).json({ message: "Failed to place order", error: error.message });
+    const isValidationError = /not found|unavailable|Invalid quantity|missing a menu reference/.test(error.message);
+    res.status(isValidationError ? 400 : 500).json({ message: error.message || "Failed to place order" });
   }
 };
-
 // @desc    Get the logged-in customer's own order history, with bill ID and
 //          payment status attached, newest first
 // @route   GET /api/orders/customer?page=1&limit=20
