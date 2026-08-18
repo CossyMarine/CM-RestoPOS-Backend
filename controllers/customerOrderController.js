@@ -14,8 +14,8 @@ export const createCustomerOrder = async (req, res) => {
   if (!items || items.length === 0) return res.status(400).json({ message: "Cart is empty" });
 
   try {
-    // Never trust price, name, or image from the client — look every line
-    // up against the real menu so a tampered request can't set its own price.
+    // Never trust price, name, or image from the client — every line must
+    // resolve to a real, available menu item, priced from the catalog.
     const menuItemIds = items.map((i) => i.menuItemId || i.id).filter(Boolean);
     if (menuItemIds.length !== items.length) {
       return res.status(400).json({ message: "One or more items are missing a menu reference" });
@@ -77,6 +77,7 @@ export const createCustomerOrder = async (req, res) => {
     res.status(isValidationError ? 400 : 500).json({ message: error.message || "Failed to place order" });
   }
 };
+
 // @desc    Get the logged-in customer's own order history, with bill ID and
 //          payment status attached, newest first
 // @route   GET /api/orders/customer?page=1&limit=20

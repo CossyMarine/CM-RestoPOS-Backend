@@ -173,6 +173,10 @@ const finalizeMpesaFailure = async ({ receipt, resultDesc, io }) => {
 //          a partial amount for a split "both" payment (prompt covers the rest).
 // @route   POST /api/receipts/:id/mpesa/initiate
 // @access  Protected — admin
+// @desc    Trigger an STK push ("Prompt"). cashAmount = 0 for prompt-only, or
+//          a partial amount for a split "both" payment (prompt covers the rest).
+// @route   POST /api/receipts/:id/mpesa/initiate
+// @access  Protected — admin
 export const initiateMpesaPayment = async (req, res) => {
   const { id } = req.params;
   let { phone, cashAmount } = req.body;
@@ -184,6 +188,17 @@ export const initiateMpesaPayment = async (req, res) => {
     if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
+
+    // A prompt is already out for this bill — don't send a second one.
+    // Tell the cashier what's already pending instead of firing again.
+    if (receipt.mpesaStatus === "pending" && receipt.mpesaCheckoutRequestId) {
+      return res.status(409).json({
+        message: `A payment prompt was already sent to ${receipt.mpesaPhone} for this bill and is still waiting on the customer.`,
+        alreadyPending: true,
+        receipt,
+      });
+    }
+
     if (!phone) {
       return res.status(400).json({ message: "M-Pesa phone number is required" });
     }
