@@ -22,9 +22,7 @@ export {
   getReceiptHistory,
   getReceiptHistoryByWaiter,
 } from "./receipt/receiptQueries.js";
-
-export { addItemsToReceipt, markReceiptPrinted } from "./receipt/receiptManagement.js";
-
+export { addItemsToReceipt, markReceiptPrinted, applyDiscount } from "./receipt/receiptManagement.js";
 // ============================================================
 // CASH PAYMENT
 // ============================================================

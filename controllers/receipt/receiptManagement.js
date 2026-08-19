@@ -95,6 +95,61 @@ await receipt.save();;
 // @desc    Record that a receipt was (re)printed
 // @route   PATCH /api/receipts/:id/print
 // @access  Protected
+export const applyDiscount = async (req, res) => {
+  const { id } = req.params;
+  const { kind, value, reason } = req.body; // kind: "percent" | "fixed" | null (null clears it)
+
+  if (kind && !["percent", "fixed"].includes(kind)) {
+    return res.status(400).json({ message: "Discount kind must be 'percent' or 'fixed'" });
+  }
+  if (kind && (isNaN(value) || value <= 0)) {
+    return res.status(400).json({ message: "Discount value must be a positive number" });
+  }
+  if (kind === "percent" && value > 100) {
+    return res.status(400).json({ message: "Percentage discount cannot exceed 100" });
+  }
+
+  try {
+    const receipt = await Receipt.findById(id);
+    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
+    if (!["unpaid", "partial"].includes(receipt.status)) {
+      return res.status(400).json({ message: "Only unpaid or partially-paid bills can be discounted" });
+    }
+    if ((receipt.amountPaid || 0) > 0) {
+      return res.status(400).json({ message: "Can't discount a bill that already has payments applied — clear or refund first" });
+    }
+
+    const settings = await AdminSettings.getSettings();
+    const discountInput = kind ? { kind, value: Number(value) } : null;
+    const { discountAmount, taxAmount, totalDue } = computeBillTotals({
+      subtotal: receipt.subtotal,
+      discount: discountInput,
+      taxSettings: settings.tax,
+    });
+
+    receipt.discount = kind
+      ? { kind, value: Number(value), amount: discountAmount, reason: reason || null, appliedBy: req.user?._id || null }
+      : { kind: null, value: 0, amount: 0, reason: null, appliedBy: null };
+
+    receipt.tax = {
+      ratePercent: settings.tax?.enabled ? settings.tax.ratePercent : 0,
+      inclusive: settings.tax?.inclusive ?? true,
+      amount: taxAmount,
+    };
+    receipt.totalDue = totalDue;
+
+    await receipt.save();
+
+    const io = req.app.get("io");
+    io.emit("receipt:updated", receipt);
+
+    res.json({ message: kind ? "Discount applied" : "Discount cleared", receipt });
+  } catch (error) {
+    console.error("Error applying discount:", error.message);
+    res.status(500).json({ message: "Failed to apply discount", error: error.message });
+  }
+};
+
 export const markReceiptPrinted = async (req, res) => {
   try {
     const receipt = await Receipt.findByIdAndUpdate(

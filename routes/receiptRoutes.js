@@ -30,7 +30,7 @@ router.patch("/:id/pay/combo", protect, authorize("admin", "accountant"), requir
 router.post("/:id/mpesa/initiate", protect, authorize("admin", "accountant"), requirePermission("payments"), requireOpenShift, initiateMpesaPayment);
 router.get("/:id/mpesa/status", protect, authorize("admin", "accountant"), getMpesaStatus);
 router.post("/:id/mpesa/cancel", protect, authorize("admin", "accountant"), cancelMpesaPayment);
-
+router.patch("/:id/discount", protect, authorize("admin", "accountant"), requirePermission("applyDiscounts"), applyDiscount);
 // Public Safaricom webhook — no auth
 router.post("/mpesa/callback", mpesaCallback);
 
