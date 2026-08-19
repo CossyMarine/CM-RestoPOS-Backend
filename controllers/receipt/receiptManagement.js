@@ -1,7 +1,8 @@
 // controllers/receipt/receiptManagement.js
 import Receipt from "../../models/Receipt.js";
 import Order from "../../models/Order.js";
-
+import AdminSettings from "../models/AdminSettings.js";
+import { computeBillTotals } from "./billing.js";
 // @desc    Add items to an unpaid bill (customer wants to order more before paying)
 // @route   PATCH /api/receipts/:id/items
 // @access  Protected — waiter, manager, admin, cashier
@@ -38,10 +39,22 @@ export const addItemsToReceipt = async (req, res) => {
 
     const merged = [...receipt.items, ...addedItems];
     const subtotal = merged.reduce((sum, i) => sum + i.lineTotal, 0);
-
-    receipt.items = merged;
-    receipt.subtotal = subtotal;
-    await receipt.save();
+const settings = await AdminSettings.getSettings();
+const { discountAmount, taxAmount, totalDue } = computeBillTotals({
+  subtotal,
+  discount: receipt.discount?.kind ? receipt.discount : null,
+  taxSettings: settings.tax,
+});
+   receipt.items = merged;
+receipt.subtotal = subtotal;
+receipt.discount.amount = discountAmount; // re-clamped/recalculated against the new subtotal
+receipt.tax = {
+  ratePercent: settings.tax?.enabled ? settings.tax.ratePercent : 0,
+  inclusive: settings.tax?.inclusive ?? true,
+  amount: taxAmount,
+};
+receipt.totalDue = totalDue;
+await receipt.save();;
 
     const existingOrder = await Order.findById(receipt.order);
 

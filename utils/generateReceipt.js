@@ -3,7 +3,8 @@ import Counter from "../models/Counter.js";
 import Receipt from "../models/Receipt.js";
 import Shift from "../models/Shift.js";
 import User from "../models/User.js";
-
+import AdminSettings from "../models/AdminSettings.js";
+import { computeBillTotals } from "./billing.js";
 export const generateReceiptForOrder = async (order, { customer } = {}) => {
   const counter = await Counter.findOneAndUpdate(
     { name: "bill" },
@@ -27,18 +28,29 @@ export const generateReceiptForOrder = async (order, { customer } = {}) => {
   if (!openShift) {
     openShift = await Shift.findOne({ status: "open" });
   }
-
-  const receipt = await Receipt.create({
-    billId,
-    order: order._id,
-    shift: openShift ? openShift._id : null,
-    tableNumber: order.tableNumber,
-    waiterName: order.waiterName,
-    source: order.source || "staff",
-    items: order.items,
-    subtotal: order.subtotal,
-    customer: customer || order.customer || null,
-  });
+const settings = await AdminSettings.getSettings();
+const { taxAmount, totalDue } = computeBillTotals({
+  subtotal: order.subtotal,
+  discount: null,
+  taxSettings: settings.tax,
+});
+ const receipt = await Receipt.create({
+  billId,
+  order: order._id,
+  shift: openShift ? openShift._id : null,
+  tableNumber: order.tableNumber,
+  waiterName: order.waiterName,
+  source: order.source || "staff",
+  items: order.items,
+  subtotal: order.subtotal,
+  customer: customer || order.customer || null,
+  tax: {
+    ratePercent: settings.tax?.enabled ? settings.tax.ratePercent : 0,
+    inclusive: settings.tax?.inclusive ?? true,
+    amount: taxAmount,
+  },
+  totalDue,
+});
 
   return receipt;
 };

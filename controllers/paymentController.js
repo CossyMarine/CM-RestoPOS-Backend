@@ -181,6 +181,7 @@ export const getPendingManualPayments = async (req, res) => {
 
     const pending = [];
     receipts.forEach((r) => {
+      const owed = r.totalDue ?? r.subtotal;
       r.pendingManualPayments.forEach((p) => {
         pending.push({
           receiptId: r._id,
@@ -190,7 +191,7 @@ export const getPendingManualPayments = async (req, res) => {
           waiterName: r.waiterName,
           subtotal: r.subtotal,
           amountPaid: r.amountPaid || 0,
-          balanceDue: Number((r.subtotal - (r.amountPaid || 0)).toFixed(2)),
+          balanceDue: Number((owed - (r.amountPaid || 0)).toFixed(2)),
           amount: p.amount,
           reference: p.reference,
           paidByName: p.paidBy?.fullName || p.paidByName || "Customer",

@@ -54,6 +54,7 @@ const userSchema = new mongoose.Schema(
       kitchen: { type: Boolean, default: false },
        paymentConfirmation: { type: Boolean, default: false },
       payments: { type: Boolean, default: true },
+      applyDiscounts: { type: Boolean, default: false },
     },
 
     // Reward/cashback points balance — only meaningful for role: "customer"

@@ -52,9 +52,10 @@ export const applyPaymentToReceipt = async ({ receipt, amount, method, reference
   receipt.payments.push({ amount, method, reference: reference || null, paidBy: paidBy || null, paidAt: new Date() });
   receipt.paymentMethod = method;
 
+  const owed = receipt.totalDue ?? receipt.subtotal;
   const totalPaid = receipt.payments.reduce((sum, p) => sum + p.amount, 0);
   receipt.amountPaid = Number(totalPaid.toFixed(2));
-  receipt.status = totalPaid >= receipt.subtotal ? "paid" : "partial";
+  receipt.status = totalPaid >= owed ? "paid" : "partial";
   if (receipt.status === "paid") receipt.paidAt = new Date();
 
   await creditCashback(receipt, amount);
@@ -79,7 +80,8 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
   const settings = await AdminSettings.getSettings();
   const pointValue = settings.reward.pointValueKes || 1;
 
-  const balanceDue = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
+  const owed = receipt.totalDue ?? receipt.subtotal;
+  const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
   if (balanceDue <= 0) throw new Error("This bill has no balance due");
 
   const requestedKes = pointsToRedeem * pointValue;
@@ -103,7 +105,7 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
   receipt.amountPaid = Number(totalPaid.toFixed(2));
   receipt.rewardPointsRedeemed = (receipt.rewardPointsRedeemed || 0) + pointsUsed;
   receipt.rewardKesRedeemed = Number(((receipt.rewardKesRedeemed || 0) + amountToApply).toFixed(2));
-  receipt.status = totalPaid >= receipt.subtotal ? "paid" : "partial";
+  receipt.status = totalPaid >= owed ? "paid" : "partial";
   if (receipt.status === "paid") receipt.paidAt = new Date();
 
   await receipt.save();
@@ -128,7 +130,6 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
 
   return { receipt, pointsUsed, kesApplied: amountToApply };
 };
-
 // NEW — moved out of walletController.js so other controllers can reuse it
 export const findCustomerByIdentifier = (identifier) =>
   User.findOne({

@@ -105,7 +105,7 @@ export const updateAccountantPermissions = async (req, res) => {
 const ALLOWED_KEYS = [
   "inventory", "manageMenu", "ordersReceipts", "voidRequests",
   "users", "settings", "waiterManagement", "kitchen", "payments",
-  "paymentConfirmation",
+  "paymentConfirmation", "applyDiscounts",
 ];
 
   try {

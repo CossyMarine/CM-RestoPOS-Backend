@@ -19,8 +19,8 @@ export const getSettings = async (req, res) => {
 // @access  Protected — admin
 
 export const updateSettings = async (req, res) => {
-  const { tillNumber, tillName, whatsappNumber, callNumber, reward, assumeTableNumberCustomer, assumeTableNumberWaiter, allowPrintingDuringPayment } = req.body;
-  try {
+const { tillNumber, tillName, whatsappNumber, callNumber, reward, tax, assumeTableNumberCustomer, assumeTableNumberWaiter,allowPrintingDuringPayment } = req.body;
+     try {
     const settings = await AdminSettings.getSettings();
     if (tillNumber !== undefined) settings.tillNumber = tillNumber;
     if (tillName !== undefined) settings.tillName = tillName;
@@ -33,6 +33,10 @@ export const updateSettings = async (req, res) => {
       const current = settings.reward.toObject ? settings.reward.toObject() : settings.reward;
       settings.reward = { ...current, ...reward };
     }
+    if (tax && typeof tax === "object") {
+  const current = settings.tax.toObject ? settings.tax.toObject() : settings.tax;
+  settings.tax = { ...current, ...tax };
+}
     await settings.save();
     res.json(settings);
   } catch (error) {
