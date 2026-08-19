@@ -102,10 +102,11 @@ export const updateAccountantPermissions = async (req, res) => {
     return res.status(400).json({ message: "permissions object is required" });
   }
 
-  const ALLOWED_KEYS = [
-    "inventory", "manageMenu", "ordersReceipts", "voidRequests",
-    "users", "settings", "waiterManagement", "kitchen", "payments",
-  ];
+const ALLOWED_KEYS = [
+  "inventory", "manageMenu", "ordersReceipts", "voidRequests",
+  "users", "settings", "waiterManagement", "kitchen", "payments",
+  "paymentConfirmation",
+];
 
   try {
     const accountant = await User.findById(id);

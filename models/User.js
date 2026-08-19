@@ -52,6 +52,7 @@ const userSchema = new mongoose.Schema(
       settings: { type: Boolean, default: false },
       waiterManagement: { type: Boolean, default: false },
       kitchen: { type: Boolean, default: false },
+       paymentConfirmation: { type: Boolean, default: false },
       payments: { type: Boolean, default: true },
     },
 
