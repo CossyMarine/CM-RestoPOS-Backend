@@ -14,7 +14,14 @@ const rewardSettingsSchema = new mongoose.Schema(
   },
   { _id: false }
 );
-
+const taxSettingsSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    ratePercent: { type: Number, default: 16 }, // e.g. 16 = 16% VAT — admin can change this any time
+    inclusive: { type: Boolean, default: true }, // true = menu prices already include tax; false = tax added on top
+  },
+  { _id: false }
+);
 const adminSettingsSchema = new mongoose.Schema(
   {
     // Singleton lock — only one document ever exists
@@ -49,12 +56,5 @@ adminSettingsSchema.statics.getSettings = async function () {
   if (!settings) settings = await this.create({ key: "global" });
   return settings;
 };
-const taxSettingsSchema = new mongoose.Schema(
-  {
-    enabled: { type: Boolean, default: true },
-    ratePercent: { type: Number, default: 16 }, // e.g. 16 = 16% VAT — admin can change this any time
-    inclusive: { type: Boolean, default: true }, // true = menu prices already include tax; false = tax added on top
-  },
-  { _id: false }
-);
+
 export default mongoose.model("AdminSettings", adminSettingsSchema);
