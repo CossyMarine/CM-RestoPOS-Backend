@@ -46,8 +46,7 @@ export const getWaiterManagementList = async (req, res) => {
       { $lookup: { from: "receipts", localField: "receipt", foreignField: "_id", as: "receiptDoc" } },
       { $unwind: "$receiptDoc" },
       { $match: { "receiptDoc.waiterName": { $in: names }, status: "approved" } },
-      { $group: { _id: "$receiptDoc.waiterName", voidCount: { $sum: 1 }, voidAmount: { $sum: "$receiptDoc.totalDue" } } },
-    ]);
+      { $group: { _id: "$receiptDoc.waiterName", voidCount: { $sum: 1 }, voidAmount: { $sum: { $ifNull: ["$receiptDoc.totalDue", "$receiptDoc.subtotal"] } } } },    ]);
 
     const orderMap = Object.fromEntries(orderStats.map((o) => [o._id, o]));
     const billMap = Object.fromEntries(billStats.map((b) => [b._id, b]));
