@@ -95,8 +95,8 @@ export const resolveBill = async (req, res) => {
     }
 
     const items = await attachMenuImages(receipt.items);
-    const balanceDue = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
-
+   const owed = receipt.totalDue ?? receipt.subtotal;
+   const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
     res.json({
       receiptId: receipt._id,
       billId: receipt.billId,
@@ -150,7 +150,8 @@ export const payWithManualTill = async (req, res) => {
     }
 
     const amt = parseFloat(amount);
-    const balanceDue = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
+    const owed = receipt.totalDue ?? receipt.subtotal;
+  const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
     if (isNaN(amt) || amt <= 0) return res.status(400).json({ message: "Enter a valid amount" });
     if (amt > balanceDue) {
       return res.status(400).json({ message: `Amount exceeds the balance due (KES ${balanceDue})` });
@@ -208,7 +209,8 @@ export const payWithStk = async (req, res) => {
     }
 
     const amt = parseFloat(amount);
-    const balanceDue = Number((receipt.subtotal - (receipt.amountPaid || 0)).toFixed(2));
+   const owed = receipt.totalDue ?? receipt.subtotal;
+ const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
     if (isNaN(amt) || amt <= 0) return res.status(400).json({ message: "Enter a valid amount" });
     if (amt > balanceDue) {
       return res.status(400).json({ message: `Amount exceeds the balance due (KES ${balanceDue})` });

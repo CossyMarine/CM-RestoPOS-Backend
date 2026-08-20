@@ -39,14 +39,14 @@ export const getWaiterManagementList = async (req, res) => {
 
     const billStats = await Receipt.aggregate([
       { $match: { waiterName: { $in: names }, status: "paid" } },
-      { $group: { _id: "$waiterName", totalBalanceSold: { $sum: "$subtotal" }, billsSold: { $sum: 1 } } },
+      { $group: { _id: "$waiterName", totalBalanceSold: { $sum: "$amountPaid" }, billsSold: { $sum: 1 } } },
     ]);
 
     const voidStats = await VoidRequest.aggregate([
       { $lookup: { from: "receipts", localField: "receipt", foreignField: "_id", as: "receiptDoc" } },
       { $unwind: "$receiptDoc" },
       { $match: { "receiptDoc.waiterName": { $in: names }, status: "approved" } },
-      { $group: { _id: "$receiptDoc.waiterName", voidCount: { $sum: 1 }, voidAmount: { $sum: "$receiptDoc.subtotal" } } },
+      { $group: { _id: "$receiptDoc.waiterName", voidCount: { $sum: 1 }, voidAmount: { $sum: "$receiptDoc.totalDue" } } },
     ]);
 
     const orderMap = Object.fromEntries(orderStats.map((o) => [o._id, o]));
@@ -96,7 +96,7 @@ export const getWaiterDetail = async (req, res) => {
     const orderCount = await Order.countDocuments({ waiterName: waiter.fullName });
     const totalSales = await Receipt.aggregate([
       { $match: { waiterName: waiter.fullName, status: "paid" } },
-      { $group: { _id: null, sum: { $sum: "$subtotal" } } },
+      { $group: { _id: null, sum: { $sum: "$amountPaid" } } },
     ]);
     const voidCount = await VoidRequest.countDocuments(); // filtered below via receipt lookup for accuracy
     const voidAgg = await VoidRequest.aggregate([

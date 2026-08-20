@@ -112,8 +112,7 @@ const computeShiftSummary = async (shiftId) => {
   });
 
   const voidedReceipts = await Receipt.find({ shift: shiftId, status: "voided" });
-  const voidedTotal = voidedReceipts.reduce((sum, r) => sum + r.subtotal, 0);
-  const voidCount = voidedReceipts.length;
+const voidedTotal = voidedReceipts.reduce((sum, r) => sum + (r.totalDue ?? r.subtotal), 0);  const voidCount = voidedReceipts.length;
 
   const pettyEntries = await PettyCash.find({ shift: shiftId });
   const pettyCashOut = pettyEntries.reduce((sum, e) => sum + e.amount, 0);

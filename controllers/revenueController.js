@@ -24,7 +24,7 @@ export const getTodayRevenue = async (req, res) => {
       {
         $group: {
           _id: null,
-          totalRevenue: { $sum: "$subtotal" },
+          totalRevenue: { $sum: "$amountPaid" },
           paidReceiptsCount: { $sum: 1 },
         },
       },
@@ -61,7 +61,7 @@ export const getRevenueSummary = async (req, res) => {
         {
           $group: {
             _id: null,
-            totalRevenue: { $sum: "$subtotal" },
+            totalRevenue: { $sum: "$amountPaid" },
           },
         },
       ]);
@@ -129,7 +129,7 @@ export const getRevenueTrend = async (req, res) => {
           _id: {
             $dateToString: { format: "%Y-%m-%d", date: "$paidAt", timezone: "Africa/Nairobi" },
           },
-          revenue: { $sum: "$subtotal" },
+          revenue: { $sum: "$amountPaid" },
         },
       },
     ]);
@@ -171,7 +171,7 @@ export const getWeeklyPerformance = async (req, res) => {
       {
         $group: {
           _id: { $dayOfWeek: { date: "$paidAt", timezone: "Africa/Nairobi" } }, // Mongo: 1=Sun..7=Sat
-          revenue: { $sum: "$subtotal" },
+          revenue: { $sum: "$amountPaid" },
           orders: { $sum: 1 },
         },
       },

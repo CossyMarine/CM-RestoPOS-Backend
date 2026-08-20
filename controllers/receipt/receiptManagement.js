@@ -1,8 +1,8 @@
 // controllers/receipt/receiptManagement.js
 import Receipt from "../../models/Receipt.js";
 import Order from "../../models/Order.js";
-import AdminSettings from "../models/AdminSettings.js";
-import { computeBillTotals } from "./billing.js";
+import AdminSettings from "../../models/AdminSettings.js";
+import { computeBillTotals } from "../../utils/billing.js";
 // @desc    Add items to an unpaid bill (customer wants to order more before paying)
 // @route   PATCH /api/receipts/:id/items
 // @access  Protected — waiter, manager, admin, cashier

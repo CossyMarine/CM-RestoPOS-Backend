@@ -67,12 +67,16 @@ export const getReceiptsTodaySummary = async (req, res) => {
     const [paidAgg, unpaidAgg] = await Promise.all([
       Receipt.aggregate([
         { $match: { status: "paid", paidAt: { $gte: startOfDay, $lte: endOfDay } } },
-        { $group: { _id: null, total: { $sum: "$subtotal" }, count: { $sum: 1 } } },
-      ]),
+{ $group: { _id: null, total: { $sum: "$amountPaid" }, count: { $sum: 1 } } },      ]),
       Receipt.aggregate([
         { $match: { status: { $in: ["unpaid", "partial"] }, createdAt: { $gte: startOfDay, $lte: endOfDay } } },
-        { $group: { _id: null, total: { $sum: "$subtotal" }, count: { $sum: 1 } } },
-      ]),
+{
++          $group: {
++            _id: null,
++            total: { $sum: { $ifNull: ["$totalDue", "$subtotal"] } },
++            count: { $sum: 1 },
++          },
++        },      ]),
     ]);
 
     res.json({
