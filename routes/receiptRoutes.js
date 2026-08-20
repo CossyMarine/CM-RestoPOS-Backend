@@ -18,6 +18,7 @@ import {
   addItemsToReceipt,
   markReceiptPrinted,
   getPendingOnlineReceipts,
+  applyDiscount,
 } from "../controllers/receiptController.js";
 import { protect, authorize, requirePermission, requireOpenShift } from "../Middlewares/authMiddleware.js";
 
