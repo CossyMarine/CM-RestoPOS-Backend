@@ -20,6 +20,7 @@ import kitchenSettingsRoutes from "./routes/kitchenSettingsRoutes.js";
 import notificationSoundRoutes from "./routes/notificationSoundRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import accountantRoutes from "./routes/accountantRoutes.js";
+import reportsRoutes from "./routes/reportsRoutes.js";
 
 dotenv.config();
 
@@ -75,5 +76,5 @@ app.use("/api/kitchen-settings", kitchenSettingsRoutes);
 app.use("/api/notification-sounds", notificationSoundRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/accountants", accountantRoutes);
-
+app.use("/api/reports", reportsRoutes);
 export default app;
