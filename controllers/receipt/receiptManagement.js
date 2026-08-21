@@ -92,9 +92,9 @@ await receipt.save();;
   }
 };
 
-// @desc    Record that a receipt was (re)printed
-// @route   PATCH /api/receipts/:id/print
-// @access  Protected
+// @desc    Apply (or clear) a discount on a fully-unpaid bill.
+// @route   PATCH /api/receipts/:id/discount
+// @access  Protected — admin OR accountant with applyDiscounts permission
 export const applyDiscount = async (req, res) => {
   const { id } = req.params;
   const { kind, value, reason } = req.body; // kind: "percent" | "fixed" | null (null clears it)
@@ -112,11 +112,8 @@ export const applyDiscount = async (req, res) => {
   try {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    if (!["unpaid", "partial"].includes(receipt.status)) {
-      return res.status(400).json({ message: "Only unpaid or partially-paid bills can be discounted" });
-    }
-    if ((receipt.amountPaid || 0) > 0) {
-      return res.status(400).json({ message: "Can't discount a bill that already has payments applied — clear or refund first" });
+     if (receipt.status !== "unpaid") {
+      return res.status(400).json({ message: "Only unpaid bills can be discounted" });
     }
 
     const settings = await AdminSettings.getSettings();

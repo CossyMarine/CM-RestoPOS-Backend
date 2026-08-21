@@ -38,10 +38,9 @@ export const payReceipt = async (req, res) => {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
-    if (!["unpaid", "partial"].includes(receipt.status)) {
+    if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
-
     const received = parseFloat(amountPaid);
     const owed = receipt.totalDue ?? receipt.subtotal;
 const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
@@ -184,10 +183,9 @@ export const initiateMpesaPayment = async (req, res) => {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
-    if (!["unpaid", "partial"].includes(receipt.status)) {
+    if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
-
     // A prompt is already out for this bill — don't send a second one.
     // Tell the cashier what's already pending instead of firing again.
     if (receipt.mpesaStatus === "pending" && receipt.mpesaCheckoutRequestId) {
@@ -382,10 +380,9 @@ export const payCashAndTill = async (req, res) => {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
-    if (!["unpaid", "partial"].includes(receipt.status)) {
+    if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
-
     const owed = receipt.totalDue ?? receipt.subtotal;                    // ← added
     const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2)); // ← changed
     cashAmount = parseFloat(cashAmount);
@@ -459,17 +456,21 @@ export const payCombo = async (req, res) => {
   try {
     const receipt = await Receipt.findById(id);
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    if (!["unpaid", "partial"].includes(receipt.status)) {
+    if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
-    }
-    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
+    }    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
 
     const owed = receipt.totalDue ?? receipt.subtotal;
     const balanceBefore = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
-    if (cashAmount + tillAmount + rewardAmount - balanceBefore > 0.01) {
-      return res.status(400).json({ message: "Combined amount cannot exceed the balance due" });
+    const combinedAmount = Number((cashAmount + tillAmount + rewardAmount).toFixed(2));
+    if (Math.abs(combinedAmount - balanceBefore) > 0.01) {
+      return res.status(400).json({
+        message:
+          combinedAmount < balanceBefore
+            ? `Amount entered (KES ${combinedAmount.toLocaleString()}) is less than the balance due (KES ${balanceBefore.toLocaleString()}) — make up the full amount to complete this payment`
+            : `Combined amount cannot exceed the balance due (KES ${balanceBefore.toLocaleString()})`,
+      });
     }
-
     const io = req.app.get("io");
 
     // ---- Reward leg first — needs the customer's own points balance ----
