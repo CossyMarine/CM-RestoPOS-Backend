@@ -147,7 +147,20 @@ const consumeBatchesForQuantity = async ({ inventoryItemId, locationId, required
   const legacyQuantityConsumed = Math.min(Number(stockBalance.unbatchedQuantity), remaining);
   stockBalance.unbatchedQuantity -= legacyQuantityConsumed;
   remaining -= legacyQuantityConsumed;
-  if (remaining > 0) throw new Error("Insufficient stock");
+
+  if (remaining > 0) {
+    if (!includeExpired) {
+      const expiredAgg = await InventoryBatch.aggregate([
+        { $match: { inventoryItem: inventoryItemId, location: locationId, quantity: { $gt: 0 }, status: { $ne: "cancelled" }, expiryDate: { $lt: now } } },
+        { $group: { _id: null, total: { $sum: "$quantity" } } },
+      ]).session(session);
+      const expiredTotal = expiredAgg[0]?.total || 0;
+      if (expiredTotal > 0) {
+        throw new Error(`Short by ${remaining} — ${expiredTotal} more is sitting here but expired, so it can't be used. Log it as waste instead.`);
+      }
+    }
+    throw new Error(`Not enough stock here — short by ${remaining}`);
+  }
 
   return { batchUsage, legacyQuantityConsumed };
 };
@@ -2866,6 +2879,12 @@ export const logUsage = async (req, res) => {
   } catch (error) {
     if (error.message === "Inventory location not found" || error.message.includes("Default location")) {
       return res.status(404).json({ message: error.message });
+    }
+    if (error.name === "Error") {
+      // Everything we deliberately throw above is a plain Error with a
+      // specific, safe message meant to be shown — pass it through instead
+      // of hiding it behind a generic one.
+      return res.status(400).json({ message: error.message });
     }
     console.error("Error logging usage:", error.message);
     res.status(500).json({ message: "Failed to log usage" });
