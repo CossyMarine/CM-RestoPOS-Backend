@@ -176,6 +176,18 @@ export const toggleItemReady = async (req, res) => {
     const io = req.app.get("io");
     io.emit("order:updated", order);
 
+    // Tell the waiter who owns this table specifically — only when an item
+    // just became ready, not when the kitchen unchecks it by mistake.
+    if (order.items[idx].ready) {
+      io.emit("order:itemReady", {
+        orderId: order._id,
+        tableNumber: order.tableNumber,
+        waiterName: order.waiterName,
+        mealName: order.items[idx].mealName,
+        quantity: order.items[idx].quantity,
+      });
+    }
+
     res.json(order);
   } catch (error) {
     console.error("Error toggling item ready state:", error.message);
