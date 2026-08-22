@@ -114,7 +114,7 @@ const buildBatchNumber = async (inventoryItemId, locationId, suppliedBatchNumber
   return generated;
 };
 
-const consumeBatchesForQuantity = async ({ inventoryItemId, locationId, requiredQuantity, stockBalance, session = null }) => {
+const consumeBatchesForQuantity = async ({ inventoryItemId, locationId, requiredQuantity, stockBalance, session = null, includeExpired = false }) => {
   const now = new Date();
   await initializeUnbatchedQuantity(stockBalance, session);
   const query = {
@@ -122,9 +122,10 @@ const consumeBatchesForQuantity = async ({ inventoryItemId, locationId, required
     location: locationId,
     quantity: { $gt: 0 },
     status: { $ne: "cancelled" },
-    $or: [{ expiryDate: null }, { expiryDate: { $gte: now } }],
   };
-
+  if (!includeExpired) {
+    query.$or = [{ expiryDate: null }, { expiryDate: { $gte: now } }];
+  }
   const batches = await InventoryBatch.find(query).sort({ createdAt: 1 }).session(session);
   batches.sort((a, b) => (a.expiryDate ? new Date(a.expiryDate) : new Date(8640000000000000)) - (b.expiryDate ? new Date(b.expiryDate) : new Date(8640000000000000)) || new Date(a.createdAt) - new Date(b.createdAt));
 
@@ -1374,16 +1375,14 @@ export const createWaste = async (req, res) => {
       let allocation;
       if (requestedBatch) {
         const batch = await InventoryBatch.findById(requestedBatch).session(session);
-        if (!batch || String(batch.inventoryItem) !== String(item) || String(batch.location) !== String(location) || batch.status === "cancelled" || (batch.expiryDate && new Date(batch.expiryDate) < new Date()) || Number(batch.quantity) < normalizedQuantity) {
-          throw new Error("Selected batch does not have enough usable stock");
+        if (!batch || String(batch.inventoryItem) !== String(item) || String(batch.location) !== String(location) || batch.status === "cancelled" || Number(batch.quantity) < normalizedQuantity) {          throw new Error("Selected batch does not have enough usable stock");
         }
         batch.quantity -= normalizedQuantity;
         batch.status = getBatchStatus(batch);
         await batch.save({ session });
         allocation = { batchUsage: [{ batch: batch._id, quantityConsumed: normalizedQuantity }], legacyQuantityConsumed: 0 };
       } else {
-        allocation = await consumeBatchesForQuantity({ inventoryItemId: item, locationId: location, requiredQuantity: normalizedQuantity, stockBalance, session });
-      }
+        allocation = await consumeBatchesForQuantity({ inventoryItemId: item, locationId: location, requiredQuantity: normalizedQuantity, stockBalance, session, includeExpired: true });      }
 
       stockBalance.quantity -= normalizedQuantity;
       await stockBalance.save({ session });
