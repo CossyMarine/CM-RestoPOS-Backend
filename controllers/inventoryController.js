@@ -1691,7 +1691,7 @@ export const createProduction = async (req, res) => {
       return res.status(400).json({ message: "Production cannot be created with cancelled status" });
     }
 
-    const productionLocation = await resolveInventoryLocation(location, "Kitchen");
+    const productionLocation = await resolveInventoryLocation(location, "Store");
     let production;
 
     if (productionStatus === "completed") {
@@ -2852,8 +2852,7 @@ export const logUsage = async (req, res) => {
     const item = await InventoryItem.findById(itemId);
     if (!item) return res.status(404).json({ message: "Inventory item not found" });
 
-    const location = await resolveInventoryLocation(locationId, "Kitchen");
-    const totalValue = quantity * item.costPerUnit;
+    const location = await resolveInventoryLocation(locationId, "Store");    const totalValue = quantity * item.costPerUnit;
     const session = await mongoose.startSession(); session.startTransaction();
     try {
       const stockBalance = await ensureLocationStockBalance(itemId, location._id, session);
