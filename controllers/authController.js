@@ -6,7 +6,7 @@ import User from "../models/User.js";
 import crypto from "crypto";
 import sendResetEmail from "../utils/sendResetEmail.js";
 import { sendResetCode } from "../utils/sendResetSms.js";
-
+import { validatePassword } from "../utils/validatePassword.js";
 // ======================= HELPERS =======================
 
 const generateToken = (user) => {
@@ -146,8 +146,9 @@ export const registerCustomer = async (req, res) => {
       return res.status(400).json({ message: "Choose email or phone" });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({ message: "Password must be at least 8 characters" });
+       const passwordCheck = validatePassword(password);
+    if (!passwordCheck.valid) {
+      return res.status(400).json({ message: "Password does not meet the requirements", requirements: passwordCheck.errors });
     }
 
     fullName = fullName.trim();
@@ -199,10 +200,12 @@ export const createUser = async (req, res) => {
       return res.status(400).json({ message: "Choose email or phone" });
     }
 
-    if (!isAdmin && !["kitchen", "waiter", "accountant"].includes(role)) {
-      return res.status(400).json({
-        message: "Choose a role: kitchen, waiter, or accountant",
-      });
+        if (!isAdmin && !["kitchen", "waiter", "accountant"].includes(role)) {
+      return res.status(400).json({ message: "Choose a role: kitchen, waiter, or accountant" });
+    }
+    const passwordCheck = validatePassword(password);
+    if (!passwordCheck.valid) {
+      return res.status(400).json({ message: "Password does not meet the requirements", requirements: passwordCheck.errors });
     }
 
     fullName = fullName.trim();
@@ -498,13 +501,12 @@ export const changePassword = async (req, res) => {
       return res.status(400).json({ message: "New passwords don't match" });
     }
 
-    if (newPassword.length < 8) {
-      return res.status(400).json({
-        message: "New password must be at least 8 characters",
-      });
+        const passwordCheck = validatePassword(newPassword);
+    if (!passwordCheck.valid) {
+      return res.status(400).json({ message: "Password does not meet the requirements", requirements: passwordCheck.errors });
     }
 
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id); // req.user has password excluded, refetch full doc
     const isMatch = await bcrypt.compare(currentPassword, user.password);
 
     if (!isMatch) {
@@ -803,10 +805,9 @@ export const resetPasswordWithCode = async (req, res) => {
       });
     }
 
-    if (newPassword.length < 8) {
-      return res.status(400).json({
-        message: "Password must be at least 8 characters",
-      });
+        const passwordCheck = validatePassword(newPassword);
+    if (!passwordCheck.valid) {
+      return res.status(400).json({ message: "Password does not meet the requirements", requirements: passwordCheck.errors });
     }
 
     const user = await User.findOne({
