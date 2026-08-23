@@ -95,7 +95,7 @@ export const addPettyCash = async (req, res) => {
 //
 // Also now reports ordersCount and voidCount so the close-shift summary
 // modal can show "today's orders" and "today's void" alongside the sale total.
-const computeShiftSummary = async (shiftId) => {
+ export const computeShiftSummary = async (shiftId) => {
   const shift = await Shift.findById(shiftId).populate("openedBy", "fullName").populate("closedBy", "fullName");
   if (!shift) return null;
 
