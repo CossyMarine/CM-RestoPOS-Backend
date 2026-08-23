@@ -5,7 +5,7 @@ import Receipt from "../models/Receipt.js";
 import VoidRequest from "../models/VoidRequest.js";
 import Order from "../models/Order.js";
 import User from "../models/User.js";
-
+import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 // @desc    Open a shift for the logged-in user. Each staff member (accountant,
 //          waiter, etc.) has their own shift now — the uniqueness check is
 //          scoped per-user, not restaurant-wide.
@@ -252,7 +252,32 @@ export const getShiftHistory = async (req, res) => {
     res.status(500).json({ message: "Failed to load shift history", error: error.message });
   }
 };
+// @desc    Admin — every shift across all accountants for a date range, with
+//          computed open/close times, opening float, closing counts, and
+//          variance — the data source for the Shift Report tab.
+// @route   GET /api/shifts/report?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+// @access  Protected — admin
+export const getShiftReport = async (req, res) => {
+  try {
+    let startDate, endDate;
+    if (req.query.startDate && req.query.endDate) {
+      startDate = getKenyanDayBounds(req.query.startDate).start;
+      endDate = getKenyanDayBounds(req.query.endDate).end;
+    } else {
+      const { start } = getKenyanDayBounds();
+      startDate = new Date(start);
+      startDate.setDate(startDate.getDate() - 6); // default: last 7 days
+      endDate = getKenyanDayBounds().end;
+    }
 
+    const shifts = await Shift.find({ createdAt: { $gte: startDate, $lte: endDate } }).sort({ createdAt: -1 });
+    const rows = await Promise.all(shifts.map((s) => computeShiftSummary(s._id)));
+    res.json(rows);
+  } catch (error) {
+    console.error("Error building shift report:", error.message);
+    res.status(500).json({ message: "Failed to build shift report", error: error.message });
+  }
+};
 // @desc    Open a shift on behalf of a specific named waiter — used by the
 //          Waiter Settings tab on a shared station login, where the account
 //          logged in isn't the individual waiter but the staff picks who
