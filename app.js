@@ -1,8 +1,11 @@
-// app.js
+
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import mongoSanitize from "express-mongo-sanitize";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
@@ -33,18 +36,17 @@ app.set("trust proxy", 1);
 
 /* CORS — credentials:true is required so the httpOnly auth cookie is sent */
 const ALLOWED_ORIGINS = [
-   "https://cm-resto-pos-frontend-djfuwhc1n.vercel.app",
-  "https://cm-resto-pos-frontend.vercel.app",
-  "https://cm-resto-pos-frontend.vercel.app",
-  "http://localhost:3000", // local dev
-  "http://localhost:5173", // vite dev
+    "https://cm-resto-pos-frontend-djfuwhc1n.vercel.app",
+    "https://cm-resto-pos-frontend.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
 ];
 
 app.use(
-  cors({
-    origin: ALLOWED_ORIGINS,
-    credentials: true,
-  })
+    cors({
+        origin: ALLOWED_ORIGINS,
+        credentials: true,
+    })
 );
 
 /* Body parser */
@@ -53,9 +55,31 @@ app.use(express.json());
 /* Cookie parser — required to read the httpOnly auth cookie */
 app.use(cookieParser());
 
+/* Security headers */
+app.use(helmet());
+
+/* Strip any request field that looks like a MongoDB operator (e.g. "$ne")
+   so nobody can smuggle query logic through a login/search field. */
+app.use(mongoSanitize());
+
+/* General API rate limit — generous, just stops a runaway client or basic
+   flood from one source. Doesn't affect normal restaurant traffic at all. */
+app.use(
+    rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 300,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: {
+            message:
+                "Too many requests — please slow down and try again shortly.",
+        },
+    })
+);
+
 /* Health check */
 app.get("/", (req, res) => {
-  res.json({ status: "RPS backend running" });
+    res.json({ status: "RPS backend running" });
 });
 
 /* =================================================
@@ -77,4 +101,5 @@ app.use("/api/notification-sounds", notificationSoundRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/accountants", accountantRoutes);
 app.use("/api/reports", reportsRoutes);
+
 export default app;

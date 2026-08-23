@@ -1,3 +1,4 @@
+
 // controllers/authController.js
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -140,11 +141,13 @@ export const registerCustomer = async (req, res) => {
     if (!fullName || !method || !contact || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
+
     if (!["email", "phone"].includes(method)) {
       return res.status(400).json({ message: "Choose email or phone" });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
     }
 
     fullName = fullName.trim();
@@ -153,7 +156,10 @@ export const registerCustomer = async (req, res) => {
     const contactTaken = await User.findOne({ [method]: cleanContact });
     if (contactTaken) {
       return res.status(400).json({
-        message: method === "email" ? "This email is already registered" : "This phone number is already registered",
+        message:
+          method === "email"
+            ? "This email is already registered"
+            : "This phone number is already registered",
       });
     }
 
@@ -188,19 +194,26 @@ export const createUser = async (req, res) => {
     if (!fullName || !method || !contact || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
+
     if (!["email", "phone"].includes(method)) {
       return res.status(400).json({ message: "Choose email or phone" });
     }
+
     if (!isAdmin && !["kitchen", "waiter", "accountant"].includes(role)) {
-      return res.status(400).json({ message: "Choose a role: kitchen, waiter, or accountant" });
+      return res.status(400).json({
+        message: "Choose a role: kitchen, waiter, or accountant",
+      });
     }
 
     fullName = fullName.trim();
-    const cleanContact = method === "email" ? contact.toLowerCase().trim() : contact.trim();
+    const cleanContact =
+      method === "email" ? contact.toLowerCase().trim() : contact.trim();
 
     const existing = await User.findOne({ [method]: cleanContact });
     if (existing) {
-      return res.status(400).json({ message: "A user with that email/phone already exists" });
+      return res.status(400).json({
+        message: "A user with that email/phone already exists",
+      });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -214,7 +227,10 @@ export const createUser = async (req, res) => {
       isAdmin: !!isAdmin,
       role: isAdmin ? "customer" : role,
       [method]: cleanContact,
-      ...(isDirectWaiter && { waiterSince: new Date(), waiterSource: "direct" }),
+      ...(isDirectWaiter && {
+        waiterSince: new Date(),
+        waiterSource: "direct",
+      }),
     });
 
     res.status(201).json({
@@ -232,21 +248,32 @@ export const createUser = async (req, res) => {
 // @access  Protected
 export const getWaiters = async (req, res) => {
   try {
-    const requester = req.user; // set by `protect` middleware, already the full user doc
+    const requester = req.user;
 
-    const baseFilter = { role: "waiter", isActive: true, hiddenFromSelector: { $ne: true } };
+    const baseFilter = {
+      role: "waiter",
+      isActive: true,
+      hiddenFromSelector: { $ne: true },
+    };
 
-    // If the requester is a waiter with a custom-restricted dropdown, narrow it down —
-    // but always include the requester's own id, since a waiter must always be able
-    // to select themselves regardless of what the admin picked for them.
-    if (requester?.role === "waiter" && requester.selectorMode === "custom") {
+    if (
+      requester?.role === "waiter" &&
+      requester.selectorMode === "custom"
+    ) {
       const allowedIds = [...(requester.visibleWaiters || []), requester._id];
       baseFilter._id = { $in: allowedIds };
     }
 
-    const waiters = await User.find(baseFilter).select("fullName").sort({ fullName: 1 });
+    const waiters = await User.find(baseFilter)
+      .select("fullName")
+      .sort({ fullName: 1 });
 
-    res.json(waiters.map((w) => ({ id: w._id, fullName: w.fullName })));
+    res.json(
+      waiters.map((w) => ({
+        id: w._id,
+        fullName: w.fullName,
+      }))
+    );
   } catch (error) {
     console.error("GET WAITERS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch waiters" });
@@ -291,6 +318,7 @@ export const getStaffCount = async (req, res) => {
     const totalStaff = await User.countDocuments({
       $or: [{ isAdmin: true }, { role: { $ne: "customer" } }],
     });
+
     res.json({ totalStaff });
   } catch (error) {
     console.error("GET STAFF COUNT ERROR:", error);
@@ -322,11 +350,16 @@ export const updateUserRole = async (req, res) => {
       user.isAdmin = true;
     } else {
       if (!["kitchen", "waiter", "accountant"].includes(role)) {
-        return res.status(400).json({ message: "Choose a role: kitchen, waiter, or accountant" });
+        return res.status(400).json({
+          message: "Choose a role: kitchen, waiter, or accountant",
+        });
       }
+
       const becomingWaiter = role === "waiter" && user.role !== "waiter";
+
       user.isAdmin = false;
       user.role = role;
+
       if (becomingWaiter) {
         user.waiterSince = new Date();
         user.waiterSource = "promoted";
@@ -334,7 +367,11 @@ export const updateUserRole = async (req, res) => {
     }
 
     await user.save();
-    res.json({ message: "Role updated successfully", user: adminUserView(user) });
+
+    res.json({
+      message: "Role updated successfully",
+      user: adminUserView(user),
+    });
   } catch (error) {
     console.error("UPDATE USER ROLE ERROR:", error);
     res.status(500).json({ message: "Failed to update role" });
@@ -349,7 +386,9 @@ export const toggleUserStatus = async (req, res) => {
     const { id } = req.params;
 
     if (req.user._id.toString() === id) {
-      return res.status(400).json({ message: "You can't deactivate your own account" });
+      return res.status(400).json({
+        message: "You can't deactivate your own account",
+      });
     }
 
     const user = await User.findById(id);
@@ -360,7 +399,10 @@ export const toggleUserStatus = async (req, res) => {
     user.isActive = !user.isActive;
     await user.save();
 
-    res.json({ message: "Status updated", user: adminUserView(user) });
+    res.json({
+      message: "Status updated",
+      user: adminUserView(user),
+    });
   } catch (error) {
     console.error("TOGGLE USER STATUS ERROR:", error);
     res.status(500).json({ message: "Failed to update status" });
@@ -379,36 +421,58 @@ export const updateMe = async (req, res) => {
 
     if (fullName !== undefined) {
       fullName = fullName.trim();
+
       if (!fullName) {
-        return res.status(400).json({ message: "Full name can't be empty" });
+        return res.status(400).json({
+          message: "Full name can't be empty",
+        });
       }
+
       user.fullName = fullName;
     }
 
     if (email !== undefined && email !== null && email !== "") {
       const cleanEmail = email.toLowerCase().trim();
+
       if (cleanEmail !== (user.email || "")) {
-        const taken = await User.findOne({ email: cleanEmail, _id: { $ne: user._id } });
+        const taken = await User.findOne({
+          email: cleanEmail,
+          _id: { $ne: user._id },
+        });
+
         if (taken) {
-          return res.status(400).json({ message: "This email is already registered" });
+          return res.status(400).json({
+            message: "This email is already registered",
+          });
         }
+
         user.email = cleanEmail;
       }
     }
 
     if (phone !== undefined && phone !== null && phone !== "") {
       const cleanPhone = phone.trim();
+
       if (cleanPhone !== (user.phone || "")) {
-        const taken = await User.findOne({ phone: cleanPhone, _id: { $ne: user._id } });
+        const taken = await User.findOne({
+          phone: cleanPhone,
+          _id: { $ne: user._id },
+        });
+
         if (taken) {
-          return res.status(400).json({ message: "This phone number is already registered" });
+          return res.status(400).json({
+            message: "This phone number is already registered",
+          });
         }
+
         user.phone = cleanPhone;
       }
     }
 
     if (!user.email && !user.phone) {
-      return res.status(400).json({ message: "You must have at least one of email or phone" });
+      return res.status(400).json({
+        message: "You must have at least one of email or phone",
+      });
     }
 
     await user.save();
@@ -429,17 +493,24 @@ export const changePassword = async (req, res) => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       return res.status(400).json({ message: "All fields are required" });
     }
+
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ message: "New passwords don't match" });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: "New password must be at least 6 characters" });
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        message: "New password must be at least 8 characters",
+      });
     }
 
-    const user = await User.findById(req.user._id); // req.user has password excluded, refetch full doc
+    const user = await User.findById(req.user._id);
     const isMatch = await bcrypt.compare(currentPassword, user.password);
+
     if (!isMatch) {
-      return res.status(401).json({ message: "Current password is incorrect" });
+      return res.status(401).json({
+        message: "Current password is incorrect",
+      });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -456,21 +527,25 @@ export const changePassword = async (req, res) => {
 // ======================= FORGOT PASSWORD HELPERS =======================
 const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
-const hashCode = (code) => crypto.createHash("sha256").update(code).digest("hex");
+const hashCode = (code) =>
+  crypto.createHash("sha256").update(code).digest("hex");
 
 const generateNumericCode = () =>
-  Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit numeric
+  Math.floor(100000 + Math.random() * 900000).toString();
 
 const maskContact = (value, method) => {
   if (method === "email") {
     const [name, domain] = value.split("@");
-    return `${name.slice(0, 2)}${"*".repeat(Math.max(name.length - 2, 1))}@${domain}`;
+    return `${name.slice(0, 2)}${"*".repeat(
+      Math.max(name.length - 2, 1)
+    )}@${domain}`;
   }
+
   return value.slice(0, -4).replace(/./g, "*") + value.slice(-4);
 };
 
-const RESEND_COOLDOWN_MS = 60 * 1000; // 60s between sends
-const CODE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+const RESEND_COOLDOWN_MS = 60 * 1000;
+const CODE_EXPIRY_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
 // ======================= FORGOT PASSWORD (step 1: request code) =======================
@@ -480,8 +555,11 @@ const MAX_ATTEMPTS = 5;
 export const forgotPassword = async (req, res) => {
   try {
     const { identifier } = req.body;
+
     if (!identifier || !identifier.trim()) {
-      return res.status(400).json({ message: "Enter your email or phone number" });
+      return res.status(400).json({
+        message: "Enter your email or phone number",
+      });
     }
 
     const value = identifier.trim();
@@ -499,32 +577,52 @@ export const forgotPassword = async (req, res) => {
       });
     }
 
-    if (user.resetCodeLastSentAt && Date.now() - user.resetCodeLastSentAt.getTime() < RESEND_COOLDOWN_MS) {
+    if (
+      user.resetCodeLastSentAt &&
+      Date.now() - user.resetCodeLastSentAt.getTime() < RESEND_COOLDOWN_MS
+    ) {
       const waitSec = Math.ceil(
-        (RESEND_COOLDOWN_MS - (Date.now() - user.resetCodeLastSentAt.getTime())) / 1000
+        (RESEND_COOLDOWN_MS -
+          (Date.now() - user.resetCodeLastSentAt.getTime())) /
+          1000
       );
-      return res.status(429).json({ message: `Please wait ${waitSec}s before requesting another code.` });
+
+      return res.status(429).json({
+        message: `Please wait ${waitSec}s before requesting another code.`,
+      });
     }
 
     const code = generateNumericCode();
-    const channel = method === "email" ? "email" : "sms"; // phone defaults to SMS first
+    const channel = method === "email" ? "email" : "sms";
 
     user.resetCode = hashCode(code);
     user.resetCodeExpires = new Date(Date.now() + CODE_EXPIRY_MS);
     user.resetCodeAttempts = 0;
     user.resetCodeChannel = channel;
     user.resetCodeLastSentAt = new Date();
+
     await user.save();
 
     try {
       if (method === "email") {
-        await sendResetEmail({ to: user.email, code, fullName: user.fullName });
+        await sendResetEmail({
+          to: user.email,
+          code,
+          fullName: user.fullName,
+        });
       } else {
-        await sendResetCode({ to: user.phone, code, channel: "sms" });
+        await sendResetCode({
+          to: user.phone,
+          code,
+          channel: "sms",
+        });
       }
     } catch (sendErr) {
       console.error("SEND RESET CODE ERROR:", sendErr);
-      return res.status(500).json({ message: "Failed to send reset code. Please try again." });
+
+      return res.status(500).json({
+        message: "Failed to send reset code. Please try again.",
+      });
     }
 
     res.json({
@@ -546,7 +644,10 @@ export const forgotPassword = async (req, res) => {
 export const resendResetCode = async (req, res) => {
   try {
     const { identifier, channel } = req.body;
-    if (!identifier) return res.status(400).json({ message: "Missing identifier" });
+
+    if (!identifier) {
+      return res.status(400).json({ message: "Missing identifier" });
+    }
 
     const value = identifier.trim();
     const method = isEmail(value) ? "email" : "phone";
@@ -555,32 +656,64 @@ export const resendResetCode = async (req, res) => {
     const user = await User.findOne({ [method]: clean }).select(
       "+resetCode +resetCodeExpires +resetCodeAttempts +resetCodeChannel +resetCodeLastSentAt"
     );
-    if (!user) return res.status(404).json({ notFound: true, message: "Account not found" });
 
-    if (user.resetCodeLastSentAt && Date.now() - user.resetCodeLastSentAt.getTime() < RESEND_COOLDOWN_MS) {
+    if (!user) {
+      return res.status(404).json({
+        notFound: true,
+        message: "Account not found",
+      });
+    }
+
+    if (
+      user.resetCodeLastSentAt &&
+      Date.now() - user.resetCodeLastSentAt.getTime() < RESEND_COOLDOWN_MS
+    ) {
       const waitSec = Math.ceil(
-        (RESEND_COOLDOWN_MS - (Date.now() - user.resetCodeLastSentAt.getTime())) / 1000
+        (RESEND_COOLDOWN_MS -
+          (Date.now() - user.resetCodeLastSentAt.getTime())) /
+          1000
       );
-      return res.status(429).json({ message: `Please wait ${waitSec}s before resending.` });
+
+      return res.status(429).json({
+        message: `Please wait ${waitSec}s before resending.`,
+      });
     }
 
     const code = generateNumericCode();
-    const useChannel = method === "phone" && channel === "whatsapp" ? "whatsapp" : method === "email" ? "email" : "sms";
+
+    const useChannel =
+      method === "phone" && channel === "whatsapp"
+        ? "whatsapp"
+        : method === "email"
+          ? "email"
+          : "sms";
 
     user.resetCode = hashCode(code);
     user.resetCodeExpires = new Date(Date.now() + CODE_EXPIRY_MS);
     user.resetCodeAttempts = 0;
     user.resetCodeChannel = useChannel;
     user.resetCodeLastSentAt = new Date();
+
     await user.save();
 
     if (method === "email") {
-      await sendResetEmail({ to: user.email, code, fullName: user.fullName });
+      await sendResetEmail({
+        to: user.email,
+        code,
+        fullName: user.fullName,
+      });
     } else {
-      await sendResetCode({ to: user.phone, code, channel: useChannel });
+      await sendResetCode({
+        to: user.phone,
+        code,
+        channel: useChannel,
+      });
     }
 
-    res.json({ message: `Code resent via ${useChannel}.`, channel: useChannel });
+    res.json({
+      message: `Code resent via ${useChannel}.`,
+      channel: useChannel,
+    });
   } catch (error) {
     console.error("RESEND RESET CODE ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -594,8 +727,11 @@ export const resendResetCode = async (req, res) => {
 export const verifyResetCode = async (req, res) => {
   try {
     const { identifier, code } = req.body;
+
     if (!identifier || !code) {
-      return res.status(400).json({ message: "Identifier and code are required" });
+      return res.status(400).json({
+        message: "Identifier and code are required",
+      });
     }
 
     const value = identifier.trim();
@@ -605,34 +741,48 @@ export const verifyResetCode = async (req, res) => {
     const user = await User.findOne({ [method]: clean }).select(
       "+resetCode +resetCodeExpires +resetCodeAttempts"
     );
+
     if (!user || !user.resetCode) {
-      return res.status(400).json({ message: "Invalid or expired code" });
+      return res.status(400).json({
+        message: "Invalid or expired code",
+      });
     }
 
     if (user.resetCodeExpires < new Date()) {
-      return res.status(400).json({ message: "Code expired. Please request a new one." });
+      return res.status(400).json({
+        message: "Code expired. Please request a new one.",
+      });
     }
 
     if (user.resetCodeAttempts >= MAX_ATTEMPTS) {
-      return res.status(429).json({ message: "Too many attempts. Please request a new code." });
+      return res.status(429).json({
+        message: "Too many attempts. Please request a new code.",
+      });
     }
 
     if (hashCode(code.trim()) !== user.resetCode) {
       user.resetCodeAttempts += 1;
       await user.save();
-      return res.status(400).json({ message: "Incorrect code" });
+
+      return res.status(400).json({
+        message: "Incorrect code",
+      });
     }
 
-    // Code correct — issue a short-lived reset token, clear the code
     const resetToken = crypto.randomBytes(32).toString("hex");
+
     user.resetToken = hashCode(resetToken);
     user.resetTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
     user.resetCode = undefined;
     user.resetCodeExpires = undefined;
     user.resetCodeAttempts = 0;
+
     await user.save();
 
-    res.json({ message: "Code verified", resetToken });
+    res.json({
+      message: "Code verified",
+      resetToken,
+    });
   } catch (error) {
     console.error("VERIFY RESET CODE ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -646,11 +796,17 @@ export const verifyResetCode = async (req, res) => {
 export const resetPasswordWithCode = async (req, res) => {
   try {
     const { resetToken, newPassword } = req.body;
+
     if (!resetToken || !newPassword) {
-      return res.status(400).json({ message: "Missing reset token or new password" });
+      return res.status(400).json({
+        message: "Missing reset token or new password",
+      });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters",
+      });
     }
 
     const user = await User.findOne({
@@ -659,13 +815,16 @@ export const resetPasswordWithCode = async (req, res) => {
     }).select("+resetToken +resetTokenExpires");
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid or expired session. Please start over." });
+      return res.status(400).json({
+        message: "Invalid or expired session. Please start over.",
+      });
     }
 
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     user.resetToken = undefined;
     user.resetTokenExpires = undefined;
+
     await user.save();
 
     res.json({ message: "Password reset successful" });
