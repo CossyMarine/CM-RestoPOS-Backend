@@ -5,8 +5,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import mongoSanitize from "express-mongo-sanitize";
-
+import { sanitize } from "express-mongo-sanitize";
 // Routes
 import authRoutes from "./routes/authRoutes.js";
 import menuRoutes from "./routes/menuRoutes.js";
@@ -59,8 +58,17 @@ app.use(cookieParser());
 app.use(helmet());
 
 /* Strip any request field that looks like a MongoDB operator (e.g. "$ne")
-   so nobody can smuggle query logic through a login/search field. */
-app.use(mongoSanitize());
+   so nobody can smuggle query logic through a login/search field.
+   NOTE: Express 5 makes req.query getter-only, so the default
+   mongoSanitize() middleware throws on every request (it tries to
+   reassign req.query wholesale). Sanitizing body + params directly
+   avoids that — those are the two places a "$ne"-style operator could
+   actually reach a Mongoose filter here (e.g. login, IDs in URLs). */
+app.use((req, res, next) => {
+  if (req.body) req.body = sanitize(req.body);
+  if (req.params) req.params = sanitize(req.params);
+  next();
+});
 
 /* General API rate limit — generous, just stops a runaway client or basic
    flood from one source. Doesn't affect normal restaurant traffic at all. */
