@@ -133,8 +133,10 @@ const voidedTotal = voidedReceipts.reduce((sum, r) => sum + (r.totalDue ?? r.sub
     : 0;
 
   const expectedCash = shift.openingFloat + totals.cash - pettyCashOut;
+  const expectedTill = totals.till;
   const grandTotal = totals.cash + totals.till + totals.prompt + totals.reward;
   const variance = shift.closingCashCount !== null ? shift.closingCashCount - expectedCash : null;
+  const tillVariance = shift.closingTillCount !== null ? shift.closingTillCount - expectedTill : null;
 
   return {
     shiftId: shift._id,
@@ -153,10 +155,13 @@ const voidedTotal = voidedReceipts.reduce((sum, r) => sum + (r.totalDue ?? r.sub
     ordersCount,      // NEW — "today's orders 70"
     pettyCashOut,
     expectedCash,
+    expectedTill,
     grandTotal,       // "today's sale 10,000"
     tipsDeclared: shift.tipsDeclared || 0,
     closingCashCount: shift.closingCashCount,
+    closingTillCount: shift.closingTillCount,
     variance,
+    tillVariance,
     pendingVoidRequests,
   };
 };
@@ -187,11 +192,14 @@ export const getShiftSummary = async (req, res) => {
 // @access  Protected
 export const closeShift = async (req, res) => {
   const { id } = req.params;
-  const { closingCashCount, tipsDeclared, notes } = req.body;
+  const { closingCashCount, closingTillCount, tipsDeclared, notes } = req.body;
   const closedBy = req.user._id;
 
   if (closingCashCount === undefined || closingCashCount === null || isNaN(closingCashCount)) {
     return res.status(400).json({ message: "closingCashCount is required and must be a number" });
+  }
+  if (closingTillCount === undefined || closingTillCount === null || isNaN(closingTillCount)) {
+    return res.status(400).json({ message: "closingTillCount is required and must be a number" });
   }
 
   try {
@@ -205,6 +213,7 @@ export const closeShift = async (req, res) => {
     }
 
     shift.closingCashCount = closingCashCount;
+    shift.closingTillCount = closingTillCount;
     shift.tipsDeclared = tipsDeclared || 0;
     shift.notes = notes || null;
     shift.closedBy = closedBy;

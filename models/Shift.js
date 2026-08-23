@@ -8,6 +8,7 @@ const shiftSchema = new mongoose.Schema(
     status: { type: String, enum: ["open", "closed"], default: "open" },
 
     closingCashCount: { type: Number, default: null },
+    closingTillCount: { type: Number, default: null },
     tipsDeclared:     { type: Number, default: 0 },
     notes:            { type: String, default: null },
 
