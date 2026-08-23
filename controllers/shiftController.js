@@ -133,7 +133,10 @@ const voidedTotal = voidedReceipts.reduce((sum, r) => sum + (r.totalDue ?? r.sub
     : 0;
 
   const expectedCash = shift.openingFloat + totals.cash - pettyCashOut;
-  const expectedTill = totals.till;
+  // Prompt (STK push) settles into the same paybill/till account as manual
+  // till, mpesa_till, paybill and pochi entries — so what the accountant
+  // counts against the M-Pesa statement includes prompt payments too.
+  const expectedTill = totals.till + totals.prompt;
   const grandTotal = totals.cash + totals.till + totals.prompt + totals.reward;
   const variance = shift.closingCashCount !== null ? shift.closingCashCount - expectedCash : null;
   const tillVariance = shift.closingTillCount !== null ? shift.closingTillCount - expectedTill : null;
