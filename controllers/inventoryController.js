@@ -1362,8 +1362,10 @@ const validateWastePayload = async (payload) => {
 
 export const createWaste = async (req, res) => {
   try {
-    const { item, location, quantity, unit, reason, note, batch: requestedBatch } = req.body;
+    const { item, quantity, unit, reason, note, batch: requestedBatch } = req.body;
     requireInventoryIds(req.body, [["item", "inventory item"], ["location", "location"], ["unit", "unit"], ["batch", "batch"]]);
+    const resolvedLocation = await resolveInventoryLocation(req.body.location, "Store");
+    const location = resolvedLocation._id;
     const payload = { item, location, quantity, unit, reason };
     const { inventoryItem, locationDoc } = await validateWastePayload(payload);
 
