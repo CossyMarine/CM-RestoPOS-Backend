@@ -34,7 +34,7 @@ const server = http.createServer(app);
    🔌 SOCKET.IO SETUP
 ======================================== */
 const ALLOWED_ORIGINS = [
-  "https://cm-resto-pos-frontend.vercel.app",
+  "https://cm-resto-pos-frontend.vercel.app","https://cm-resto-pos-frontend-fb21.vercel.app",
   "http://localhost:3000", // local dev
 ];
 
