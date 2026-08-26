@@ -39,6 +39,7 @@ const ALLOWED_ORIGINS = [
     "https://cm-resto-pos-frontend.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
+    "https://cm-resto-pos-frontend-fb21.vercel.app",
 ];
 
 app.use(
