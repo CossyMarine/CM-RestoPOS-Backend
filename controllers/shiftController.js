@@ -15,8 +15,15 @@ export const openShift = async (req, res) => {
   const { openingFloat } = req.body;
   const openedBy = req.user._id;
 
-  if (openingFloat === undefined || openingFloat === null || isNaN(openingFloat)) {
-    return res.status(400).json({ message: "openingFloat is required and must be a number" });
+  // Only accountants (and admins) ever handle money — a float is a starting
+  // cash amount to reconcile against later. Waiters and kitchen staff never
+  // touch payments, so asking them for one is meaningless; their shift is
+  // purely a time record, not a cash record.
+  const floatApplies = req.user.isAdmin || req.user.role === "accountant";
+  if (floatApplies) {
+    if (openingFloat === undefined || openingFloat === null || isNaN(openingFloat)) {
+      return res.status(400).json({ message: "openingFloat is required and must be a number" });
+    }
   }
 
   try {
@@ -25,7 +32,7 @@ export const openShift = async (req, res) => {
       return res.status(400).json({ message: "You already have a shift open", shift: existing });
     }
 
-    const shift = await Shift.create({ openedBy, openingFloat });
+    const shift = await Shift.create({ openedBy, openingFloat: floatApplies ? openingFloat : 0 });
 
     const io = req.app.get("io");
     io.emit("shift:opened", shift);
@@ -36,7 +43,6 @@ export const openShift = async (req, res) => {
     res.status(500).json({ message: "Failed to open shift", error: error.message });
   }
 };
-
 // @desc    Get the logged-in user's own open shift, or null
 // @route   GET /api/shifts/current
 // @access  Protected
