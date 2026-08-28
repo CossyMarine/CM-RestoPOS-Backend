@@ -94,7 +94,7 @@ router.get("/purchase-orders/:id", protect, authorize("admin", "accountant"), re
 router.put("/purchase-orders/:id", protect, authorize("admin"), requirePermission("inventory"), updatePurchaseOrder);
 router.post("/purchase-orders/:id/order", protect, authorize("admin"), requirePermission("inventory"), orderPurchaseOrder);
 router.post("/purchase-orders/:id/cancel", protect, authorize("admin"), requirePermission("inventory"), cancelPurchaseOrder);
-router.post("/waste", protect, authorize("admin", "kitchen"), requirePermission("inventory"), createWaste);
+router.post("/waste", protect, authorize("admin", "kitchen"), requirePermission("inventory"), requireOpenShift, createWaste);
 router.get("/waste", protect, authorize("admin", "accountant", "kitchen"), requirePermission("inventory"), getWastes);
 router.get("/waste/:id", protect, authorize("admin", "accountant", "kitchen"), requirePermission("inventory"), getWasteById);
 router.delete("/waste/:id", protect, authorize("admin", "kitchen"), requirePermission("inventory"), cancelWaste);
@@ -107,7 +107,7 @@ router.post("/stock", protect, authorize("admin"), requirePermission("inventory"
 router.get("/usage/overview", protect, authorize("admin", "kitchen", "accountant"), requirePermission("inventory"), getUsageOverview);
 router.get("/usage/:itemId/detail", protect, authorize("admin", "kitchen", "accountant"), requirePermission("inventory"), getItemUsageDetail);
 router.get("/usage", protect, authorize("admin"), requirePermission("inventory"), getUsageHistory);
-router.post("/usage", protect, authorize("admin", "kitchen"), logUsage);
+router.post("/usage", protect, authorize("admin", "kitchen"), requireOpenShift, logUsage);
 router.post("/adjust", protect, authorize("admin"), requirePermission("inventory"), adjustStock);
 
 router.get("/summary", protect, authorize("admin", "accountant"), requirePermission("inventory"), getInventorySummary);

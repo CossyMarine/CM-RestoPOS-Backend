@@ -19,6 +19,7 @@ import {
   authorize,
   requirePermission,
   requireOpenShiftForWaiter,
+  requireOpenShift,
 } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
@@ -29,11 +30,12 @@ router.get("/pending", protect, getPendingOrders);
 router.get("/history", protect, authorize("kitchen", "admin"), getOrderHistory);
 router.get("/kitchen/stats", protect, authorize("kitchen", "admin", "accountant"), requirePermission("kitchen"), getKitchenStats);
 
-router.patch("/:id/status", protect, authorize("kitchen", "admin"), updateOrderStatus);
+router.patch("/:id/status", protect, authorize("kitchen", "admin"), requireOpenShift, updateOrderStatus);
 router.patch(
   "/:id/items/:itemIndex/ready",
   protect,
   authorize("kitchen", "admin"),
+  requireOpenShift,
   toggleItemReady
 );
 router.patch("/:id/assign", protect, authorize("admin", "waiter"), requireOpenShiftForWaiter(), assignOrderWaiter);
