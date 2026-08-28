@@ -79,3 +79,31 @@ export const requireOpenShift = async (req, res, next) => {
     res.status(500).json({ message: "Failed to verify shift status", error: error.message });
   }
 };
+// Blocks a waiter-identified action unless that specific named waiter has
+// an open shift — checks the ACTING waiter (from the request body), not
+// req.user, since waiter stations are a shared login where req.user is the
+// station account, not the individual waiter performing the action.
+export const requireOpenShiftForWaiter = (field = "waiterName") => async (req, res, next) => {
+  if (req.user?.isAdmin) return next();
+
+  const waiterName = req.body[field];
+  if (!waiterName) {
+    return res.status(400).json({ message: `${field} is required` });
+  }
+
+  try {
+    const waiterUser = await User.findOne({ fullName: waiterName, role: "waiter" }).select("_id");
+    if (!waiterUser) {
+      return res.status(404).json({ message: `No waiter found named "${waiterName}"` });
+    }
+    const openShift = await Shift.findOne({ openedBy: waiterUser._id, status: "open" });
+    if (!openShift) {
+      return res.status(403).json({
+        message: `${waiterName}'s shift is closed — open their shift before doing this.`,
+      });
+    }
+    next();
+  } catch (error) {
+    res.status(500).json({ message: "Failed to verify shift status", error: error.message });
+  }
+};

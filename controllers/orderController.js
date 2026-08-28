@@ -18,19 +18,6 @@ export const createOrder = async (req, res) => {
   }
 
   try {
-    // Shift gate — only enforced when the order is attributed to a named waiter.
-    if (waiterName) {
-      const waiterUser = await User.findOne({ fullName: waiterName, role: "waiter" }).select("_id");
-      if (waiterUser) {
-        const openShift = await Shift.findOne({ openedBy: waiterUser._id, status: "open" });
-        if (!openShift) {
-          return res.status(403).json({
-            message: `${waiterName}'s shift is closed. Open their shift in Settings before taking orders.`,
-          });
-        }
-      }
-    }
-
     // Any line referencing a real menu item must use that item's real price —
     // client-supplied price is only trusted for genuinely off-menu/manual
     // lines (no menuItemId), which the data model explicitly supports.

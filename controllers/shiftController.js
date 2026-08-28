@@ -198,25 +198,33 @@ export const closeShift = async (req, res) => {
   const { closingCashCount, closingTillCount, tipsDeclared, notes } = req.body;
   const closedBy = req.user._id;
 
-  if (closingCashCount === undefined || closingCashCount === null || isNaN(closingCashCount)) {
-    return res.status(400).json({ message: "closingCashCount is required and must be a number" });
-  }
-  if (closingTillCount === undefined || closingTillCount === null || isNaN(closingTillCount)) {
-    return res.status(400).json({ message: "closingTillCount is required and must be a number" });
-  }
-
   try {
-    const shift = await Shift.findById(id);
+    const shift = await Shift.findById(id).populate("openedBy", "role fullName");
     if (!shift) return res.status(404).json({ message: "Shift not found" });
-    if (!req.user.isAdmin && req.user.role !== "waiter" && String(shift.openedBy) !== String(req.user._id)) {
+    if (!req.user.isAdmin && req.user.role !== "waiter" && String(shift.openedBy._id) !== String(req.user._id)) {
       return res.status(403).json({ message: "This isn't your shift" });
     }
     if (shift.status !== "open") {
       return res.status(400).json({ message: "Shift is already closed" });
     }
 
-    shift.closingCashCount = closingCashCount;
-    shift.closingTillCount = closingTillCount;
+    // Cash/till reconciliation only applies to accountants — waiters never
+    // process payments at all (every payment route is accountant/admin-only),
+    // so their shift never touches real money. Asking them to declare a cash
+    // or till figure that's structurally always zero is meaningless — their
+    // shift close is just marking when they finished, nothing financial.
+    const reconciliationApplies = shift.openedBy?.role === "accountant";
+    if (reconciliationApplies) {
+      if (closingCashCount === undefined || closingCashCount === null || isNaN(closingCashCount)) {
+        return res.status(400).json({ message: "closingCashCount is required and must be a number" });
+      }
+      if (closingTillCount === undefined || closingTillCount === null || isNaN(closingTillCount)) {
+        return res.status(400).json({ message: "closingTillCount is required and must be a number" });
+      }
+      shift.closingCashCount = closingCashCount;
+      shift.closingTillCount = closingTillCount;
+    }
+
     shift.tipsDeclared = tipsDeclared || 0;
     shift.notes = notes || null;
     shift.closedBy = closedBy;
