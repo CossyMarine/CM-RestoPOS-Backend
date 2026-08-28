@@ -16,7 +16,7 @@ import {
   getUsageOverview, getItemUsageDetail, getInventorySummary,
   getBatches, getBatchById, getExpiringBatches, getInventoryIntegrity,
 } from "../controllers/inventoryController.js";
-import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
+import { protect, authorize, requirePermission,requireOpenShift } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
