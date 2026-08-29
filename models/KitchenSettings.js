@@ -4,8 +4,8 @@ import mongoose from "mongoose";
 const kitchenSettingsSchema = new mongoose.Schema(
   {
     // Singleton lock — only one document ever exists
-    key: { type: String, default: "global", unique: true },
-
+key: { type: String, default: "global" },
+businessId: { type: mongoose.Schema.Types.ObjectId, ref: "Business", required: true },
     // "oldest" = new tickets join the bottom of the queue (FIFO). "newest" = new tickets jump to the top.
     sortOrder: { type: String, enum: ["oldest", "newest"], default: "oldest" },
 
@@ -28,13 +28,15 @@ const kitchenSettingsSchema = new mongoose.Schema(
     // Minutes before a ticket turns yellow ("late") / red ("critical")
     lateThresholdMinutes: { type: Number, default: 8 },
     criticalThresholdMinutes: { type: Number, default: 15 },
+    businessId: { type: mongoose.Schema.Types.ObjectId, ref: "Business", required: true },
+key: { type: String, default: "global" },
   },
   { timestamps: true }
 );
-
-kitchenSettingsSchema.statics.getSettings = async function () {
-  let settings = await this.findOne({ key: "global" });
-  if (!settings) settings = await this.create({ key: "global" });
+kitchenSettingsSchema.index({ businessId: 1, key: 1 }, { unique: true });
+kitchenSettingsSchema.statics.getSettings = async function (businessId) {
+  let settings = await this.findOne({ businessId, key: "global" });
+  if (!settings) settings = await this.create({ businessId, key: "global" });
   return settings;
 };
 

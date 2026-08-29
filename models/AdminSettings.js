@@ -25,8 +25,8 @@ const taxSettingsSchema = new mongoose.Schema(
 const adminSettingsSchema = new mongoose.Schema(
   {
     // Singleton lock — only one document ever exists
-    key: { type: String, default: "global", unique: true },
-
+key: { type: String, default: "global" },
+businessId: { type: mongoose.Schema.Types.ObjectId, ref: "Business", required: true },
     // Manual till shown to customers who pay via "Till" instead of STK
     tillNumber: { type: String, default: null },
     tillName: { type: String, default: null },
@@ -46,14 +46,16 @@ const adminSettingsSchema = new mongoose.Schema(
 
     reward: { type: rewardSettingsSchema, default: () => ({}) },
     tax: { type: taxSettingsSchema, default: () => ({}) },
+    businessId: { type: mongoose.Schema.Types.ObjectId, ref: "Business", required: true },
+key: { type: String, default: "global" },
   },
   { timestamps: true }
 );
-
+adminSettingsSchema.index({ businessId: 1, key: 1 }, { unique: true });
 // Fetch the single settings document, creating it with defaults on first use.
-adminSettingsSchema.statics.getSettings = async function () {
-  let settings = await this.findOne({ key: "global" });
-  if (!settings) settings = await this.create({ key: "global" });
+adminSettingsSchema.statics.getSettings = async function (businessId) {
+  let settings = await this.findOne({ businessId, key: "global" });
+  if (!settings) settings = await this.create({ businessId, key: "global" });
   return settings;
 };
 

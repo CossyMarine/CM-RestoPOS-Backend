@@ -11,7 +11,7 @@ import { validatePassword } from "../utils/validatePassword.js";
 
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user._id, isAdmin: user.isAdmin, role: user.role },
+    { id: user._id, businessId: user.businessId, isAdmin: user.isAdmin, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
@@ -113,16 +113,23 @@ export const getMe = async (req, res) => {
 // @desc    Check if an email/phone is already taken
 // @route   GET /api/auth/check-availability?field=email&value=jane@mail.com
 // @access  Public
+// @desc    Check if an email/phone is already taken (within one business)
+// @route   GET /api/auth/check-availability?field=email&value=jane@mail.com&businessId=<id>
+// @access  Public
 export const checkAvailability = async (req, res) => {
   try {
-    const { field, value } = req.query;
+    const { field, value, businessId } = req.query;
 
     if (!field || !value || !["email", "phone"].includes(field)) {
       return res.status(400).json({ message: "Invalid check request" });
     }
 
+    if (!businessId) {
+      return res.status(400).json({ message: "Missing business — scan the table QR code again" });
+    }
+
     const clean = field === "phone" ? value.trim() : value.toLowerCase().trim();
-    const existing = await User.findOne({ [field]: clean }).select("_id");
+    const existing = await User.findOne({ [field]: clean, businessId }).select("_id");
 
     res.json({ available: !existing });
   } catch (error) {
@@ -136,8 +143,11 @@ export const checkAvailability = async (req, res) => {
 // @access  Public
 export const registerCustomer = async (req, res) => {
   try {
-    let { fullName, method, contact, password } = req.body;
+let { fullName, method, contact, password, businessId } = req.body;
 
+if (!businessId) {
+  return res.status(400).json({ message: "Missing business — scan the table QR code again" });
+}
     if (!fullName || !method || !contact || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
@@ -154,8 +164,7 @@ export const registerCustomer = async (req, res) => {
     fullName = fullName.trim();
     const cleanContact = method === "email" ? contact.toLowerCase().trim() : contact.trim();
 
-    const contactTaken = await User.findOne({ [method]: cleanContact });
-    if (contactTaken) {
+const contactTaken = await User.findOne({ [method]: cleanContact, businessId });    if (contactTaken) {
       return res.status(400).json({
         message:
           method === "email"
@@ -168,12 +177,13 @@ export const registerCustomer = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({
-      fullName,
-      password: hashedPassword,
-      isAdmin: false,
-      role: "customer",
-      [method]: cleanContact,
-    });
+  fullName,
+  password: hashedPassword,
+  isAdmin: false,
+  role: "customer",
+  businessId,
+  [method]: cleanContact,
+});
 
     const token = generateToken(user);
     res.cookie("token", token, getCookieOptions());
@@ -225,16 +235,17 @@ export const createUser = async (req, res) => {
     const isDirectWaiter = !isAdmin && role === "waiter";
 
     const user = await User.create({
-      fullName,
-      password: hashedPassword,
-      isAdmin: !!isAdmin,
-      role: isAdmin ? "customer" : role,
-      [method]: cleanContact,
-      ...(isDirectWaiter && {
-        waiterSince: new Date(),
-        waiterSource: "direct",
-      }),
-    });
+  fullName,
+  password: hashedPassword,
+  isAdmin: !!isAdmin,
+  role: isAdmin ? "customer" : role,
+  [method]: cleanContact,
+  businessId: req.businessId,
+  ...(isDirectWaiter && {
+    waiterSince: new Date(),
+    waiterSource: "direct",
+  }),
+});
 
     res.status(201).json({
       message: "User created successfully",

@@ -40,6 +40,12 @@ const receiptSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
 
     order: {
       type: mongoose.Schema.Types.ObjectId,

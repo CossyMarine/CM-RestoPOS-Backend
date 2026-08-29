@@ -11,6 +11,12 @@ const inventoryStockSchema = new mongoose.Schema(
     // `undefined` is intentionally preserved for records that have not been
     // reconciled yet; controllers initialize it transactionally on first write.
     unbatchedQuantity: { type: Number, default: undefined, min: 0 },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

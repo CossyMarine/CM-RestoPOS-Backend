@@ -8,19 +8,15 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    email: {
-      type: String,
-      trim: true,
-      lowercase: true,
-      unique: true,
-      sparse: true, // allows many docs with no email
-    },
+   email: {
+  type: String,
+  trim: true,
+  lowercase: true,
+},
     phone: {
-      type: String,
-      trim: true,
-      unique: true,
-      sparse: true, // allows many docs with no phone
-    },
+  type: String,
+  trim: true,
+},
     password: { type: String, required: true }, // bcrypt hash
 
     // Marine-style flag — true = full-access staff (was admin/manager/cashier).
@@ -36,7 +32,13 @@ const userSchema = new mongoose.Schema(
       enum: ["kitchen", "waiter", "accountant", "customer"],
       default: "customer",
     },
-
+businessId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Business",
+  // required only for staff — customers can exist without a business today,
+  // but per your last answer, customer accounts are now per-restaurant too,
+  // so this should end up required for every role once registerCustomer sets it
+},
     isActive: { type: Boolean, default: true },
 
         // ---- Granular module access (role: "accountant" only) ----
@@ -88,5 +90,6 @@ resetTokenExpires: { type: Date, select: false },
   },
   { timestamps: true }
 );
-
+userSchema.index({ businessId: 1, email: 1 }, { unique: true, sparse: true });
+userSchema.index({ businessId: 1, phone: 1 }, { unique: true, sparse: true });
 export default mongoose.model("User", userSchema);

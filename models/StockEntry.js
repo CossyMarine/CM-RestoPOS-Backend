@@ -11,6 +11,12 @@ const stockEntrySchema = new mongoose.Schema(
     totalCost:   { type: Number, required: true },     // quantity * costPerUnit, snapshotted
     addedBy:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     note:        { type: String, default: "" },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

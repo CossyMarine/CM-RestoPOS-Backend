@@ -11,7 +11,12 @@ const shiftSchema = new mongoose.Schema(
     closingTillCount: { type: Number, default: null },
     tipsDeclared:     { type: Number, default: 0 },
     notes:            { type: String, default: null },
-
+businessId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Business",
+  required: true,
+  index: true,
+},
     closedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     closedAt: { type: Date, default: null },
   },

@@ -14,6 +14,12 @@ const inventoryBatchSchema = new mongoose.Schema(
     receiving: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryReceiving" },
     production: { type: mongoose.Schema.Types.ObjectId, ref: "Production" },
     waste: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryWaste" },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
     status: {
       type: String,
       enum: ["active", "depleted", "expired", "cancelled"],

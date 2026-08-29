@@ -12,6 +12,12 @@ const menuItemSchema = new mongoose.Schema(
     isAvailable:   { type: Boolean, default: true },
     pinned:        { type: Boolean, default: false },
     pinOrder:      { type: Number, default: 0 },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

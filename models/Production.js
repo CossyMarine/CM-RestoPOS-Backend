@@ -33,6 +33,12 @@ const productionSchema = new mongoose.Schema(
       default: "completed",
     },
     producedBatch: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryBatch" },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

@@ -18,6 +18,12 @@ const inventoryUsageLogSchema = new mongoose.Schema(
     totalValue:  { type: Number, required: true }, // quantity * costPerUnit, snapshotted
     recordedBy:  { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     note:        { type: String, default: "" },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

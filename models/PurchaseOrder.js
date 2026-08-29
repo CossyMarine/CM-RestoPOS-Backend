@@ -25,6 +25,12 @@ const purchaseOrderSchema = new mongoose.Schema(
       enum: ["draft", "ordered", "partially_received", "received", "cancelled"],
       default: "draft",
     },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

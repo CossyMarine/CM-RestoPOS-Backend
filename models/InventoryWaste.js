@@ -22,6 +22,12 @@ const inventoryWasteSchema = new mongoose.Schema(
     recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     note: { type: String, default: "" },
     status: { type: String, enum: ["recorded", "cancelled"], default: "recorded" },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

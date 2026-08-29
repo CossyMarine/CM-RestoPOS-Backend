@@ -7,6 +7,12 @@ const pettyCashSchema = new mongoose.Schema(
     amount:   { type: Number, required: true },
     reason:   { type: String, required: true },
     loggedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

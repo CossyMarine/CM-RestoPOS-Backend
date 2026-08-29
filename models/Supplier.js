@@ -9,6 +9,12 @@ const supplierSchema = new mongoose.Schema(
     contactPerson: { type: String, trim: true, default: "" },
     note: { type: String, trim: true, default: "" },
     isActive: { type: Boolean, default: true },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

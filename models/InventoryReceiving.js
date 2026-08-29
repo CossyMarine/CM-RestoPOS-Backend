@@ -33,6 +33,12 @@ const inventoryReceivingSchema = new mongoose.Schema(
       enum: ["received", "cancelled"],
       default: "received",
     },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

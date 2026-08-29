@@ -27,6 +27,12 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
     },
     source: { type: String, enum: ["staff", "online"], default: "staff" },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
 
     // Registered customer who placed this order (online orders now require login)
     customer: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },

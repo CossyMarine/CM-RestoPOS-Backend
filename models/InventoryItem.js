@@ -17,6 +17,12 @@ const inventoryItemSchema = new mongoose.Schema(
     currentStock: { type: Number, default: 0 },   // running quantity in stock
     reorderLevel: { type: Number, default: 0 },   // low-stock threshold; 0 = no alert
     isActive:     { type: Boolean, default: true },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );

@@ -16,6 +16,12 @@ const recipeSchema = new mongoose.Schema(
     ingredients: { type: [ingredientSchema], required: true, default: [] },
     isActive: { type: Boolean, default: true },
     note: { type: String, trim: true, default: "" },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );
