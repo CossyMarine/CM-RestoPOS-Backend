@@ -1,5 +1,6 @@
 // models/StockEntry.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const stockEntrySchema = new mongoose.Schema(
   {

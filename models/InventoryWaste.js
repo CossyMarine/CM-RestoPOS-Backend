@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const inventoryWasteSchema = new mongoose.Schema(
   {

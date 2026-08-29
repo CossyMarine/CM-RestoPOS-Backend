@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const receivingItemSchema = new mongoose.Schema(
   {
@@ -18,8 +19,6 @@ const receivingItemSchema = new mongoose.Schema(
 
 const inventoryReceivingSchema = new mongoose.Schema(
   {
-    
-    
     supplierName: { type: String, trim: true, default: "" },
     supplier: { type: mongoose.Schema.Types.ObjectId, ref: "Supplier" },
     purchaseOrder: { type: mongoose.Schema.Types.ObjectId, ref: "PurchaseOrder" },
@@ -42,6 +41,8 @@ const inventoryReceivingSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+inventoryReceivingSchema.plugin(tenantGuard);
 
 const InventoryReceiving = mongoose.model("InventoryReceiving", inventoryReceivingSchema);
 

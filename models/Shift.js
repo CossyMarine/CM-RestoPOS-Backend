@@ -1,5 +1,6 @@
 // models/Shift.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const shiftSchema = new mongoose.Schema(
   {
@@ -22,5 +23,5 @@ businessId: {
   },
   { timestamps: true } // createdAt doubles as "openedAt"
 );
-
+shiftSchema.plugin(tenantGuard);
 export default mongoose.model("Shift", shiftSchema);

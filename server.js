@@ -12,17 +12,8 @@ dotenv.config();
 ======================================== */
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(async () => {
-    console.log("✅ MongoDB connected");
-    try {
-      await seedDefaultInventoryLocations();
-      console.log("✅ Inventory locations seeded");
-    } catch (error) {
-      console.error("❌ Inventory location seeding error:", error.message);
-    }
-  })
+  .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.log("❌ MongoDB error:", err));
-
 const PORT = process.env.PORT || 5000;
 
 /* ========================================

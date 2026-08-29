@@ -1,5 +1,6 @@
 // models/VoidRequest.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const voidRequestSchema = new mongoose.Schema(
   {

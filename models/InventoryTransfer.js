@@ -1,5 +1,6 @@
 // models/InventoryTransfer.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const inventoryTransferSchema = new mongoose.Schema(
   {
@@ -18,6 +19,7 @@ const inventoryTransferSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+inventoryTransferSchema.plugin(tenantGuard);
 
 const InventoryTransfer = mongoose.model("InventoryTransfer", inventoryTransferSchema);
 

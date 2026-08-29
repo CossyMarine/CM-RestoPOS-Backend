@@ -1,6 +1,7 @@
 // models/Receipt.js
 import mongoose from "mongoose";
 import { orderItemSchema } from "./Order.js";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 // One entry per payment towards a bill — supports partial payments,
 // multiple methods on the same bill, and a full audit trail.
@@ -292,6 +293,6 @@ totalDue: { type: Number, default: null },
     timestamps: true,
   }
 );
-
+receiptSchema.plugin(tenantGuard);
 export default mongoose.model("Receipt", receiptSchema);
 export { orderItemSchema };

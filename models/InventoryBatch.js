@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const inventoryBatchSchema = new mongoose.Schema(
   {
@@ -33,7 +34,7 @@ const inventoryBatchSchema = new mongoose.Schema(
 // A physical lot can exist at more than one location after a stock transfer.
 inventoryBatchSchema.index({ batchNumber: 1, inventoryItem: 1, location: 1 }, { unique: true });
 inventoryBatchSchema.index({ inventoryItem: 1, location: 1, status: 1, expiryDate: 1, createdAt: 1 });
-
+inventoryBatchSchema.plugin(tenantGuard);
 const InventoryBatch = mongoose.model("InventoryBatch", inventoryBatchSchema);
 
 export default InventoryBatch;

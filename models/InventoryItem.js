@@ -1,5 +1,6 @@
 // models/InventoryItem.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const inventoryItemSchema = new mongoose.Schema(
   {
@@ -26,5 +27,5 @@ const inventoryItemSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+inventoryItemSchema.plugin(tenantGuard);
 export default mongoose.model("InventoryItem", inventoryItemSchema);

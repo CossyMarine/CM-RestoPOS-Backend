@@ -1,5 +1,6 @@
 // models/InventoryLocation.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const inventoryLocationSchema = new mongoose.Schema(
   {
@@ -16,12 +17,16 @@ const inventoryLocationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-inventoryLocationSchema.index({ name: 1 }, { unique: true });
-inventoryLocationSchema.index({ code: 1 }, { unique: true });
+inventoryLocationSchema.index({ businessId: 1, name: 1 }, { unique: true });
+inventoryLocationSchema.index({ businessId: 1, code: 1 }, { unique: true });
+
+inventoryLocationSchema.plugin(tenantGuard);
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-export const seedDefaultInventoryLocations = async () => {
+export const seedDefaultInventoryLocations = async (businessId) => {
+  if (!businessId) throw new Error("seedDefaultInventoryLocations requires a businessId");
+
   const defaults = [
     { name: "Store", code: "STORE" },
     { name: "Kitchen", code: "KITCHEN" },
@@ -33,6 +38,7 @@ export const seedDefaultInventoryLocations = async () => {
     const normalizedCode = location.code.trim().toUpperCase();
 
     const existing = await InventoryLocation.findOne({
+      businessId,
       $or: [
         { name: new RegExp(`^${escapeRegExp(normalizedName)}$`, "i") },
         { code: new RegExp(`^${escapeRegExp(normalizedCode)}$`, "i") },
@@ -41,6 +47,7 @@ export const seedDefaultInventoryLocations = async () => {
 
     if (!existing) {
       await InventoryLocation.create({
+        businessId,
         name: normalizedName,
         code: normalizedCode,
         isActive: true,

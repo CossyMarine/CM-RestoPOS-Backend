@@ -1,5 +1,6 @@
 // models/MenuItem.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const menuItemSchema = new mongoose.Schema(
   {
@@ -21,5 +22,6 @@ const menuItemSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+menuItemSchema.plugin(tenantGuard);
 
 export default mongoose.model("MenuItem", menuItemSchema);

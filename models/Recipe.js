@@ -1,5 +1,6 @@
 // models/Recipe.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const ingredientSchema = new mongoose.Schema(
   {

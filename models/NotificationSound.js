@@ -1,5 +1,6 @@
 // models/NotificationSound.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const notificationSoundSchema = new mongoose.Schema(
   {

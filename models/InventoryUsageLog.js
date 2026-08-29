@@ -1,5 +1,6 @@
 // models/InventoryUsageLog.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const inventoryUsageLogSchema = new mongoose.Schema(
   {

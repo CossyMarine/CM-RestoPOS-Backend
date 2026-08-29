@@ -13,7 +13,7 @@ export const getMenu = async (req, res) => {
       return res.json(cachedMenu);
     }
 
-    const items = await MenuItem.find({ isAvailable: true }).sort({
+   const items = await req.scope(MenuItem).find({ isAvailable: true }).sort({
       pinned: -1,
       pinOrder: 1,
       category: 1,

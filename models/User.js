@@ -1,5 +1,6 @@
 // models/User.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -92,4 +93,5 @@ resetTokenExpires: { type: Date, select: false },
 );
 userSchema.index({ businessId: 1, email: 1 }, { unique: true, sparse: true });
 userSchema.index({ businessId: 1, phone: 1 }, { unique: true, sparse: true });
+userSchema.plugin(tenantGuard);
 export default mongoose.model("User", userSchema);

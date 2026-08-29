@@ -1,6 +1,7 @@
 import Business from "../models/Business.js";
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
+import { seedDefaultInventoryLocations } from "../models/InventoryLocation.js";
 
 // @desc    Create a new tenant business
 // @route   POST /api/superadmin/businesses
@@ -25,7 +26,9 @@ export const createBusiness = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+await seedDefaultInventoryLocations(business._id);
 
+res.status(201).json({ business });
 // @desc    List all businesses on the platform
 // @route   GET /api/superadmin/businesses
 export const listBusinesses = async (req, res) => {

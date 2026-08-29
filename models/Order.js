@@ -1,5 +1,6 @@
 // models/Order.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const orderItemSchema = new mongoose.Schema(
   {
@@ -44,6 +45,6 @@ const orderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+orderSchema.plugin(tenantGuard);
 export default mongoose.model("Order", orderSchema);
 export { orderItemSchema };

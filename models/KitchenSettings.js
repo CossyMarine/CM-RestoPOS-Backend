@@ -1,5 +1,6 @@
 // models/KitchenSettings.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const kitchenSettingsSchema = new mongoose.Schema(
   {

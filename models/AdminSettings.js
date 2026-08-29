@@ -1,5 +1,6 @@
 // models/AdminSettings.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const rewardSettingsSchema = new mongoose.Schema(
   {
