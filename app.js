@@ -23,7 +23,7 @@ import notificationSoundRoutes from "./routes/notificationSoundRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import accountantRoutes from "./routes/accountantRoutes.js";
 import reportsRoutes from "./routes/reportsRoutes.js";
-
+import superAdminRoutes from "./routes/superAdminRoutes.js";
 dotenv.config();
 
 /* =================================================
@@ -110,5 +110,5 @@ app.use("/api/notification-sounds", notificationSoundRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/accountants", accountantRoutes);
 app.use("/api/reports", reportsRoutes);
-
+app.use("/api/superadmin", superAdminRoutes);
 export default app;

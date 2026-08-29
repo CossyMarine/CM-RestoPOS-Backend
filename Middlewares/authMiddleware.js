@@ -108,3 +108,10 @@ export const requireOpenShiftForWaiter = (field = "waiterName") => async (req, r
     res.status(500).json({ message: "Failed to verify shift status", error: error.message });
   }
 };
+// Platform-level only — Business A/B/C admins never pass this.
+export const requireSuperAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== "superadmin") {
+    return res.status(403).json({ message: "Superadmin access only" });
+  }
+  next();
+};

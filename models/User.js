@@ -28,16 +28,16 @@ const userSchema = new mongoose.Schema(
 
     // Only meaningful when isAdmin is false.
     role: {
-      type: String,
-      enum: ["kitchen", "waiter", "accountant", "customer"],
-      default: "customer",
-    },
+  type: String,
+  enum: ["superadmin", "kitchen", "waiter", "accountant", "customer"],
+  default: "customer",
+},
 businessId: {
   type: mongoose.Schema.Types.ObjectId,
   ref: "Business",
-  // required only for staff — customers can exist without a business today,
-  // but per your last answer, customer accounts are now per-restaurant too,
-  // so this should end up required for every role once registerCustomer sets it
+  required: function () {
+    return this.role !== "superadmin";
+  },
 },
     isActive: { type: Boolean, default: true },
 
