@@ -16,5 +16,6 @@ const notificationSoundSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+notificationSoundSchema.plugin(tenantGuard);
 
 export default mongoose.model("NotificationSound", notificationSoundSchema);

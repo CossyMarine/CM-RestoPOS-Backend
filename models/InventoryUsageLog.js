@@ -28,5 +28,6 @@ const inventoryUsageLogSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+inventoryUsageLogSchema.plugin(tenantGuard);
 
 export default mongoose.model("InventoryUsageLog", inventoryUsageLogSchema);

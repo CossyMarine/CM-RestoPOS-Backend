@@ -20,7 +20,8 @@ const supplierSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-supplierSchema.index({ name: 1 }, { unique: true });
+supplierSchema.index({ businessId: 1, name: 1 }, { unique: true });
+supplierSchema.plugin(tenantGuard);
 
 const Supplier = mongoose.model("Supplier", supplierSchema);
 

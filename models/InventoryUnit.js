@@ -15,6 +15,7 @@ const inventoryUnitSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+inventoryUnitSchema.plugin(tenantGuard);
 
 export default mongoose.model("InventoryUnit", inventoryUnitSchema);
 

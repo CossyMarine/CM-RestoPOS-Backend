@@ -1,4 +1,5 @@
 // controllers/receipt/receiptQueries.js
+import mongoose from "mongoose";
 import Receipt from "../../models/Receipt.js";
 import { getKenyanDayBounds } from "../../utils/dateHelpers.js";
 
@@ -14,7 +15,9 @@ const excludeUnclaimedOnline = {
 // @access  Protected — admin
 export const getReceipts = async (req, res) => {
   try {
+    const { businessId } = req;
     const receipts = await Receipt.find({
+      businessId,
       status: { $in: ["unpaid", "partial"] },
       ...excludeUnclaimedOnline,
     }).sort({ createdAt: -1 });
@@ -30,7 +33,9 @@ export const getReceipts = async (req, res) => {
 // @access  Protected — admin, accountant
 export const getPaidReceipts = async (req, res) => {
   try {
+    const { businessId } = req;
     const receipts = await Receipt.find({
+      businessId,
       status: "paid",
       ...excludeUnclaimedOnline,
     }).sort({ paidAt: -1 }).limit(200);
@@ -46,7 +51,9 @@ export const getPaidReceipts = async (req, res) => {
 // @access  Protected — admin
 export const getPendingOnlineReceipts = async (req, res) => {
   try {
+    const { businessId } = req;
     const receipts = await Receipt.find({
+      businessId,
       source: "online",
       waiterName: null,
     }).sort({ createdAt: 1 });
@@ -62,15 +69,17 @@ export const getPendingOnlineReceipts = async (req, res) => {
 // @access  Protected — admin, accountant
 export const getReceiptsTodaySummary = async (req, res) => {
   try {
+    const { businessId } = req;
+    const businessObjectId = new mongoose.Types.ObjectId(businessId);
     const { start: startOfDay, end: endOfDay } = getKenyanDayBounds();
 
-        const [paidAgg, unpaidAgg] = await Promise.all([
+    const [paidAgg, unpaidAgg] = await Promise.all([
       Receipt.aggregate([
-        { $match: { status: "paid", paidAt: { $gte: startOfDay, $lte: endOfDay } } },
+        { $match: { businessId: businessObjectId, status: "paid", paidAt: { $gte: startOfDay, $lte: endOfDay } } },
         { $group: { _id: null, total: { $sum: "$amountPaid" }, count: { $sum: 1 } } },
       ]),
       Receipt.aggregate([
-        { $match: { status: { $in: ["unpaid", "partial"] }, createdAt: { $gte: startOfDay, $lte: endOfDay } } },
+        { $match: { businessId: businessObjectId, status: { $in: ["unpaid", "partial"] }, createdAt: { $gte: startOfDay, $lte: endOfDay } } },
         {
           $group: {
             _id: null,
@@ -98,8 +107,9 @@ export const getReceiptsTodaySummary = async (req, res) => {
 // @access  Protected
 export const getReceiptsByWaiter = async (req, res) => {
   try {
+    const { businessId } = req;
     const { name } = req.params;
-    const receipts = await Receipt.find({ waiterName: name, status: { $in: ["unpaid", "partial"] } }).sort({
+    const receipts = await Receipt.find({ businessId, waiterName: name, status: { $in: ["unpaid", "partial"] } }).sort({
       createdAt: -1,
     });
     res.json(receipts);
@@ -114,7 +124,8 @@ export const getReceiptsByWaiter = async (req, res) => {
 // @access  Protected
 export const getReceiptById = async (req, res) => {
   try {
-    const receipt = await Receipt.findById(req.params.id)
+    const { businessId } = req;
+    const receipt = await Receipt.findOne({ _id: req.params.id, businessId })
       .populate("payments.paidBy", "fullName email phone isAdmin role")
       .populate("pendingManualPayments.paidBy", "fullName email phone isAdmin role")
       .populate("customer", "fullName email phone role");
@@ -131,12 +142,13 @@ export const getReceiptById = async (req, res) => {
 // @access  Protected
 export const getReceiptHistory = async (req, res) => {
   try {
+    const { businessId } = req;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, parseInt(req.query.limit) || 10);
     const q = (req.query.q || "").trim();
     const { from, to } = req.query;
 
-    const filter = {};
+    const filter = { businessId };
     if (q) {
       const orClauses = [
         { billId: { $regex: q, $options: "i" } },
@@ -179,13 +191,14 @@ export const getReceiptHistory = async (req, res) => {
 // @access  Protected
 export const getReceiptHistoryByWaiter = async (req, res) => {
   try {
+    const { businessId } = req;
     const { name } = req.params;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, parseInt(req.query.limit) || 4);
     const q = (req.query.q || "").trim();
     const { from, to } = req.query;
 
-    const filter = { waiterName: name };
+    const filter = { businessId, waiterName: name };
     if (q) {
       const orClauses = [{ billId: { $regex: q, $options: "i" } }];
       orClauses.push(

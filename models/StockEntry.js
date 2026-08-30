@@ -21,5 +21,6 @@ const stockEntrySchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+stockEntrySchema.plugin(tenantGuard);
 
 export default mongoose.model("StockEntry", stockEntrySchema);

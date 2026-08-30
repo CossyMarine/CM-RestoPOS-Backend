@@ -39,7 +39,6 @@ const receiptSchema = new mongoose.Schema(
     billId: {
       type: String,
       required: true,
-      unique: true,
     },
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -83,30 +82,30 @@ const receiptSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-discount: {
-  type: {
-    kind: { type: String, enum: ["percent", "fixed", null], default: null },
-    value: { type: Number, default: 0 },   // 10 (%) or 200 (KES) — whatever was entered
-    amount: { type: Number, default: 0 },  // the actual KES amount deducted, always stored regardless of kind
-    reason: { type: String, default: null },
-    appliedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-  },
-  default: () => ({}),
-},
+    discount: {
+      type: {
+        kind: { type: String, enum: ["percent", "fixed", null], default: null },
+        value: { type: Number, default: 0 },   // 10 (%) or 200 (KES) — whatever was entered
+        amount: { type: Number, default: 0 },  // the actual KES amount deducted, always stored regardless of kind
+        reason: { type: String, default: null },
+        appliedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      },
+      default: () => ({}),
+    },
 
-tax: {
-  type: {
-    ratePercent: { type: Number, default: 0 }, // snapshot of the rate AT THE TIME this bill was made
-    inclusive: { type: Boolean, default: true },
-    amount: { type: Number, default: 0 },      // KES value of tax within/added to this bill
-  },
-  default: () => ({}),
-},
+    tax: {
+      type: {
+        ratePercent: { type: Number, default: 0 }, // snapshot of the rate AT THE TIME this bill was made
+        inclusive: { type: Boolean, default: true },
+        amount: { type: Number, default: 0 },      // KES value of tax within/added to this bill
+      },
+      default: () => ({}),
+    },
 
-// The actual amount owed after discount + tax — this is what payments
-// should be measured against. `subtotal` keeps its original meaning
-// (raw sum of item lines) for reporting continuity.
-totalDue: { type: Number, default: null },
+    // The actual amount owed after discount + tax — this is what payments
+    // should be measured against. `subtotal` keeps its original meaning
+    // (raw sum of item lines) for reporting continuity.
+    totalDue: { type: Number, default: null },
     // The registered customer this bill belongs to (null for walk-in/guest bills)
     customer: {
       type: mongoose.Schema.Types.ObjectId,
@@ -293,6 +292,9 @@ totalDue: { type: Number, default: null },
     timestamps: true,
   }
 );
+
+receiptSchema.index({ businessId: 1, billId: 1 }, { unique: true });
 receiptSchema.plugin(tenantGuard);
+
 export default mongoose.model("Receipt", receiptSchema);
 export { orderItemSchema };

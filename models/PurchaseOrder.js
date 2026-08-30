@@ -15,7 +15,7 @@ const purchaseOrderItemSchema = new mongoose.Schema(
 
 const purchaseOrderSchema = new mongoose.Schema(
   {
-    poNumber: { type: String, required: true, unique: true, trim: true },
+    poNumber: { type: String, required: true, trim: true },
     supplier: { type: mongoose.Schema.Types.ObjectId, ref: "Supplier", required: true },
     location: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryLocation", required: true },
     orderedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -35,6 +35,9 @@ const purchaseOrderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+purchaseOrderSchema.index({ businessId: 1, poNumber: 1 }, { unique: true });
+purchaseOrderSchema.plugin(tenantGuard);
 
 const PurchaseOrder = mongoose.model("PurchaseOrder", purchaseOrderSchema);
 

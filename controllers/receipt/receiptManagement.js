@@ -3,10 +3,12 @@ import Receipt from "../../models/Receipt.js";
 import Order from "../../models/Order.js";
 import AdminSettings from "../../models/AdminSettings.js";
 import { computeBillTotals } from "../../utils/billing.js";
+
 // @desc    Add items to an unpaid bill (customer wants to order more before paying)
 // @route   PATCH /api/receipts/:id/items
 // @access  Protected — waiter, manager, admin, cashier
 export const addItemsToReceipt = async (req, res) => {
+  const { businessId } = req;
   const { id } = req.params;
   const { items } = req.body;
 
@@ -15,7 +17,7 @@ export const addItemsToReceipt = async (req, res) => {
   }
 
   try {
-    const receipt = await Receipt.findById(id);
+    const receipt = await Receipt.findOne({ _id: id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Only unpaid bills can be added to" });
@@ -39,24 +41,26 @@ export const addItemsToReceipt = async (req, res) => {
 
     const merged = [...receipt.items, ...addedItems];
     const subtotal = merged.reduce((sum, i) => sum + i.lineTotal, 0);
-const settings = await AdminSettings.getSettings();
-const { discountAmount, taxAmount, totalDue } = computeBillTotals({
-  subtotal,
-  discount: receipt.discount?.kind ? receipt.discount : null,
-  taxSettings: settings.tax,
-});
-   receipt.items = merged;
-receipt.subtotal = subtotal;
-receipt.discount.amount = discountAmount; // re-clamped/recalculated against the new subtotal
-receipt.tax = {
-  ratePercent: settings.tax?.enabled ? settings.tax.ratePercent : 0,
-  inclusive: settings.tax?.inclusive ?? true,
-  amount: taxAmount,
-};
-receipt.totalDue = totalDue;
-await receipt.save();;
 
-    const existingOrder = await Order.findById(receipt.order);
+    const settings = await AdminSettings.getSettings(businessId);
+    const { discountAmount, taxAmount, totalDue } = computeBillTotals({
+      subtotal,
+      discount: receipt.discount?.kind ? receipt.discount : null,
+      taxSettings: settings.tax,
+    });
+
+    receipt.items = merged;
+    receipt.subtotal = subtotal;
+    receipt.discount.amount = discountAmount; // re-clamped/recalculated against the new subtotal
+    receipt.tax = {
+      ratePercent: settings.tax?.enabled ? settings.tax.ratePercent : 0,
+      inclusive: settings.tax?.inclusive ?? true,
+      amount: taxAmount,
+    };
+    receipt.totalDue = totalDue;
+    await receipt.save();
+
+    const existingOrder = await Order.findOne({ _id: receipt.order, businessId });
 
     // Was this ticket already served/cancelled and cleared off the kitchen
     // screen? If so, silently merging new items into that same order would
@@ -73,7 +77,7 @@ await receipt.save();;
       orderUpdate.cancelledAt = null;
     }
 
-    const order = await Order.findByIdAndUpdate(receipt.order, orderUpdate, { new: true });
+    const order = await Order.findOneAndUpdate({ _id: receipt.order, businessId }, orderUpdate, { new: true });
 
     const io = req.app.get("io");
     io.emit("receipt:updated", receipt);
@@ -96,6 +100,7 @@ await receipt.save();;
 // @route   PATCH /api/receipts/:id/discount
 // @access  Protected — admin OR accountant with applyDiscounts permission
 export const applyDiscount = async (req, res) => {
+  const { businessId } = req;
   const { id } = req.params;
   const { kind, value, reason } = req.body; // kind: "percent" | "fixed" | null (null clears it)
 
@@ -110,13 +115,13 @@ export const applyDiscount = async (req, res) => {
   }
 
   try {
-    const receipt = await Receipt.findById(id);
+    const receipt = await Receipt.findOne({ _id: id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-     if (receipt.status !== "unpaid") {
+    if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Only unpaid bills can be discounted" });
     }
 
-    const settings = await AdminSettings.getSettings();
+    const settings = await AdminSettings.getSettings(businessId);
     const discountInput = kind ? { kind, value: Number(value) } : null;
     const { discountAmount, taxAmount, totalDue } = computeBillTotals({
       subtotal: receipt.subtotal,
@@ -149,8 +154,9 @@ export const applyDiscount = async (req, res) => {
 
 export const markReceiptPrinted = async (req, res) => {
   try {
-    const receipt = await Receipt.findByIdAndUpdate(
-      req.params.id,
+    const { businessId } = req;
+    const receipt = await Receipt.findOneAndUpdate(
+      { _id: req.params.id, businessId },
       { $inc: { printCount: 1 }, $set: { printedAt: new Date() } },
       { new: true }
     );

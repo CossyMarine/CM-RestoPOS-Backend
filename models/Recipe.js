@@ -13,7 +13,7 @@ const ingredientSchema = new mongoose.Schema(
 
 const recipeSchema = new mongoose.Schema(
   {
-    menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true, unique: true },
+    menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
     ingredients: { type: [ingredientSchema], required: true, default: [] },
     isActive: { type: Boolean, default: true },
     note: { type: String, trim: true, default: "" },
@@ -27,7 +27,8 @@ const recipeSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-recipeSchema.index({ menuItem: 1, isActive: 1 }, { unique: true });
+recipeSchema.index({ businessId: 1, menuItem: 1, isActive: 1 }, { unique: true });
+recipeSchema.plugin(tenantGuard);
 
 const Recipe = mongoose.model("Recipe", recipeSchema);
 

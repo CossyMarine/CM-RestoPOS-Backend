@@ -17,5 +17,6 @@ const pettyCashSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+pettyCashSchema.plugin(tenantGuard);
 
 export default mongoose.model("PettyCash", pettyCashSchema);

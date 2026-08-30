@@ -25,5 +25,6 @@ const voidRequestSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+voidRequestSchema.plugin(tenantGuard);
 
 export default mongoose.model("VoidRequest", voidRequestSchema);

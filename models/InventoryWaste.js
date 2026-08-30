@@ -32,5 +32,6 @@ const inventoryWasteSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+inventoryWasteSchema.plugin(tenantGuard);
 
 export default mongoose.model("InventoryWaste", inventoryWasteSchema);

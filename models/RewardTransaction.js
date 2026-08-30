@@ -1,8 +1,15 @@
 // models/RewardTransaction.js
 import mongoose from "mongoose";
+import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 
 const rewardTransactionSchema = new mongoose.Schema(
   {
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     // Signed delta actually applied to the user's walletPoints balance
     type: { type: String, enum: ["earn", "redeem", "adjustment"], required: true },
@@ -15,5 +22,8 @@ const rewardTransactionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+rewardTransactionSchema.index({ businessId: 1, user: 1, createdAt: -1 });
+rewardTransactionSchema.plugin(tenantGuard);
 
 export default mongoose.model("RewardTransaction", rewardTransactionSchema);

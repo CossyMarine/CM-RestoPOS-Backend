@@ -43,6 +43,7 @@ const productionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+productionSchema.plugin(tenantGuard);
 
 const Production = mongoose.model("Production", productionSchema);
 

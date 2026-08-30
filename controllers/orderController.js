@@ -11,6 +11,7 @@ import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 // @route   POST /api/orders
 // @access  Protected — cashier, manager, admin, waiter
 export const createOrder = async (req, res) => {
+  const { businessId } = req;
   const { tableNumber, waiterName, items } = req.body;
 
   if (!items || items.length === 0) {
@@ -23,7 +24,7 @@ export const createOrder = async (req, res) => {
     // lines (no menuItemId), which the data model explicitly supports.
     const menuItemIds = items.map((i) => i.menuItemId || i._id).filter(Boolean);
     const menuItems = menuItemIds.length
-      ? await MenuItem.find({ _id: { $in: menuItemIds } })
+      ? await MenuItem.find({ _id: { $in: menuItemIds }, businessId })
       : [];
     const menuItemsById = new Map(menuItems.map((m) => [String(m._id), m]));
 
@@ -71,6 +72,7 @@ export const createOrder = async (req, res) => {
     // Staff-entered orders already have a waiter attached, so they go
     // straight into the kitchen queue instead of waiting on "pending".
     const order = await Order.create({
+      businessId,
       tableNumber,
       waiterName,
       items: itemsWithSnapshot,
@@ -98,9 +100,10 @@ export const createOrder = async (req, res) => {
 // @access  Protected
 export const getPendingOrders = async (req, res) => {
   try {
+    const { businessId } = req;
     // Kitchen's live queue = orders actively being served. Online orders
     // only reach this state once a waiter has claimed them.
-    const orders = await Order.find({ status: "serving" }).sort({ createdAt: 1 });
+    const orders = await Order.find({ status: "serving", businessId }).sort({ createdAt: 1 });
     res.json(orders);
   } catch (error) {
     console.error("Error fetching pending orders:", error.message);
@@ -112,6 +115,7 @@ export const getPendingOrders = async (req, res) => {
 // @route   PATCH /api/orders/:id/status
 // @access  Protected — kitchen, manager, admin
 export const updateOrderStatus = async (req, res) => {
+  const { businessId } = req;
   const { id } = req.params;
   const { status } = req.body;
 
@@ -125,7 +129,7 @@ export const updateOrderStatus = async (req, res) => {
     if (status === "completed") update.servedAt = new Date();
     if (status === "cancelled") update.cancelledAt = new Date();
 
-    const order = await Order.findByIdAndUpdate(id, update, { new: true });
+    const order = await Order.findOneAndUpdate({ _id: id, businessId }, update, { new: true });
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
@@ -145,11 +149,12 @@ export const updateOrderStatus = async (req, res) => {
 // @route   PATCH /api/orders/:id/items/:itemIndex/ready
 // @access  Protected — kitchen, manager, admin
 export const toggleItemReady = async (req, res) => {
+  const { businessId } = req;
   const { id, itemIndex } = req.params;
   const { ready } = req.body;
 
   try {
-    const order = await Order.findById(id);
+    const order = await Order.findOne({ _id: id, businessId });
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     const idx = Number(itemIndex);
@@ -190,6 +195,7 @@ export const toggleItemReady = async (req, res) => {
 // @route   PATCH /api/orders/:id/assign
 // @access  Protected — waiter, manager, admin
 export const assignOrderWaiter = async (req, res) => {
+  const { businessId } = req;
   const { id } = req.params;
   const { waiterName } = req.body;
 
@@ -198,7 +204,7 @@ export const assignOrderWaiter = async (req, res) => {
   }
 
   try {
-    const order = await Order.findById(id);
+    const order = await Order.findOne({ _id: id, businessId });
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (order.source !== "online") {
       return res.status(400).json({ message: "Only online orders can be claimed this way" });
@@ -212,7 +218,7 @@ export const assignOrderWaiter = async (req, res) => {
     await order.save();
 
     const receipt = await Receipt.findOneAndUpdate(
-      { order: order._id },
+      { order: order._id, businessId },
       { waiterName },
       { new: true }
     );
@@ -236,10 +242,11 @@ export const assignOrderWaiter = async (req, res) => {
 // @access  Protected — kitchen, manager, admin
 export const getOrderHistory = async (req, res) => {
   try {
+    const { businessId } = req;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 25));
 
-    const query = {};
+    const query = { businessId };
 
     if (req.query.status) query.status = req.query.status;
     if (req.query.waiterName) query.waiterName = new RegExp(req.query.waiterName, "i");
@@ -302,9 +309,11 @@ export const getOrderHistory = async (req, res) => {
 // @access  Protected — kitchen, manager, admin
 export const getKitchenStats = async (req, res) => {
   try {
+    const { businessId } = req;
     const { start: startOfDay } = getKenyanDayBounds();
 
     const servedToday = await Order.find({
+      businessId,
       status: "completed",
       servedAt: { $gte: startOfDay },
     }).select("createdAt servedAt").lean();

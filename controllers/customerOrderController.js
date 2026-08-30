@@ -8,6 +8,7 @@ import { generateReceiptForOrder } from "../utils/generateReceipt.js";
 // @route   POST /api/orders/customer
 // @access  Protected — customer
 export const createCustomerOrder = async (req, res) => {
+  const { businessId } = req;
   const { tableNumber, items } = req.body;
 
   if (!tableNumber) return res.status(400).json({ message: "Table number is required" });
@@ -21,7 +22,7 @@ export const createCustomerOrder = async (req, res) => {
       return res.status(400).json({ message: "One or more items are missing a menu reference" });
     }
 
-    const menuItems = await MenuItem.find({ _id: { $in: menuItemIds } });
+    const menuItems = await MenuItem.find({ _id: { $in: menuItemIds }, businessId });
     const menuItemsById = new Map(menuItems.map((m) => [String(m._id), m]));
 
     const itemsWithTotals = items.map((i) => {
@@ -53,6 +54,7 @@ export const createCustomerOrder = async (req, res) => {
     const subtotal = Number(itemsWithTotals.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
 
     const order = await Order.create({
+      businessId,
       tableNumber,
       waiterName: null,
       items: itemsWithTotals,
@@ -84,20 +86,21 @@ export const createCustomerOrder = async (req, res) => {
 // @access  Protected — customer
 export const getCustomerOrders = async (req, res) => {
   try {
+    const { businessId } = req;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, parseInt(req.query.limit) || 20);
 
-    const total = await Order.countDocuments({ customer: req.user._id });
-    const orders = await Order.find({ customer: req.user._id })
+    const total = await Order.countDocuments({ customer: req.user._id, businessId });
+    const orders = await Order.find({ customer: req.user._id, businessId })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean();
 
     const orderIds = orders.map((o) => o._id);
-    const receipts = await Receipt.find({ order: { $in: orderIds } })
-      .select("order billId status amountPaid subtotal totalDue pendingManualPayments")     
-       .lean();
+    const receipts = await Receipt.find({ order: { $in: orderIds }, businessId })
+      .select("order billId status amountPaid subtotal totalDue pendingManualPayments")
+      .lean();
     const receiptByOrder = Object.fromEntries(receipts.map((r) => [String(r.order), r]));
 
     res.json({
@@ -127,10 +130,11 @@ export const getCustomerOrders = async (req, res) => {
 // @route   PATCH /api/orders/customer/:id/cancel
 // @access  Protected — customer
 export const cancelCustomerOrder = async (req, res) => {
+  const { businessId } = req;
   const { id } = req.params;
 
   try {
-    const order = await Order.findById(id);
+    const order = await Order.findOne({ _id: id, businessId });
 
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (String(order.customer) !== String(req.user._id)) {
