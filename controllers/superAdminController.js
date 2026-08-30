@@ -8,7 +8,10 @@ import { seedDefaultInventoryLocations } from "../models/InventoryLocation.js";
 export const createBusiness = async (req, res) => {
   try {
     const { name, phone, email, kraPin, plan } = req.body;
-    if (!name) return res.status(400).json({ message: "Business name is required" });
+
+    if (!name) {
+      return res.status(400).json({ message: "Business name is required" });
+    }
 
     const business = await Business.create({
       name,
@@ -21,14 +24,13 @@ export const createBusiness = async (req, res) => {
       subscriptionStart: new Date(),
     });
 
+    await seedDefaultInventoryLocations(business._id);
+
     res.status(201).json({ business });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-await seedDefaultInventoryLocations(business._id);
-
-res.status(201).json({ business });
 // @desc    List all businesses on the platform
 // @route   GET /api/superadmin/businesses
 export const listBusinesses = async (req, res) => {
