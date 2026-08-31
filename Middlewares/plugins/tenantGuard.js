@@ -1,5 +1,4 @@
-// A Mongoose plugin — attach to every TENANT-OWNED schema (not Business itself).
-// Refuses to run any read/write query that has no businessId in its filter.
+// Middlewares/plugins/tenantGuard.js
 export default function tenantGuard(schema) {
   const guardedOps = [
     "find", "findOne", "findOneAndUpdate", "findOneAndDelete",
@@ -9,7 +8,10 @@ export default function tenantGuard(schema) {
   guardedOps.forEach((op) => {
     schema.pre(op, function (next) {
       const filter = this.getFilter();
-      if (filter.businessId === undefined) {
+      const filterKeys = Object.keys(filter);
+      const isIdOnlyLookup = filterKeys.length === 1 && filterKeys[0] === "_id";
+
+      if (filter.businessId === undefined && !isIdOnlyLookup) {
         if (filter._bypassTenantGuard) {
           delete filter._bypassTenantGuard;
           return next();

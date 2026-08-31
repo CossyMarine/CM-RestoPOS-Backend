@@ -43,6 +43,9 @@ const productionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+// models/Production.js
+productionSchema.index({ businessId: 1, createdAt: -1 });
+productionSchema.index({ businessId: 1, status: 1, createdAt: -1 });
 productionSchema.plugin(tenantGuard);
 
 const Production = mongoose.model("Production", productionSchema);

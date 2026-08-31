@@ -26,7 +26,7 @@ const recipeSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+recipeSchema.index({ businessId: 1, isActive: 1 });
 recipeSchema.index({ businessId: 1, menuItem: 1, isActive: 1 }, { unique: true });
 recipeSchema.plugin(tenantGuard);
 

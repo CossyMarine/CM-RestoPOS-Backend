@@ -41,7 +41,9 @@ const inventoryReceivingSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+// models/InventoryReceiving.js
+inventoryReceivingSchema.index({ businessId: 1, createdAt: -1 });
+inventoryReceivingSchema.index({ businessId: 1, supplier: 1, createdAt: -1 });
 inventoryReceivingSchema.plugin(tenantGuard);
 
 const InventoryReceiving = mongoose.model("InventoryReceiving", inventoryReceivingSchema);

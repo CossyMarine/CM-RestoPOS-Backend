@@ -37,6 +37,7 @@ const purchaseOrderSchema = new mongoose.Schema(
 );
 
 purchaseOrderSchema.index({ businessId: 1, poNumber: 1 }, { unique: true });
+purchaseOrderSchema.index({ businessId: 1, createdAt: -1 });
 purchaseOrderSchema.plugin(tenantGuard);
 
 const PurchaseOrder = mongoose.model("PurchaseOrder", purchaseOrderSchema);

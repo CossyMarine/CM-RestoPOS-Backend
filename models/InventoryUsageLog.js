@@ -28,6 +28,9 @@ const inventoryUsageLogSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+// models/InventoryUsageLog.js
+inventoryUsageLogSchema.index({ businessId: 1, createdAt: -1 });
+inventoryUsageLogSchema.index({ businessId: 1, item: 1, createdAt: -1 });
 inventoryUsageLogSchema.plugin(tenantGuard);
 
 export default mongoose.model("InventoryUsageLog", inventoryUsageLogSchema);

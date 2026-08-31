@@ -23,5 +23,8 @@ businessId: {
   },
   { timestamps: true } // createdAt doubles as "openedAt"
 );
+// models/Shift.js
+shiftSchema.index({ businessId: 1, openedBy: 1, status: 1 });
+shiftSchema.index({ businessId: 1, createdAt: -1 });
 shiftSchema.plugin(tenantGuard);
 export default mongoose.model("Shift", shiftSchema);

@@ -21,7 +21,7 @@ const inventoryStockSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+inventoryStockSchema.index({ businessId: 1, location: 1 });
 inventoryStockSchema.index({ businessId: 1, item: 1, location: 1 }, { unique: true });
 inventoryStockSchema.plugin(tenantGuard);
 

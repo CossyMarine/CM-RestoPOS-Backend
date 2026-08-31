@@ -19,7 +19,7 @@ const supplierSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+supplierSchema.index({ businessId: 1, isActive: 1, name: 1 });
 supplierSchema.index({ businessId: 1, name: 1 }, { unique: true });
 supplierSchema.plugin(tenantGuard);
 

@@ -21,6 +21,9 @@ const stockEntrySchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+stockEntrySchema.index({ businessId: 1, createdAt: -1 });
+stockEntrySchema.index({ businessId: 1, item: 1, createdAt: -1 });
 stockEntrySchema.plugin(tenantGuard);
 
 export default mongoose.model("StockEntry", stockEntrySchema);

@@ -45,6 +45,10 @@ const orderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+// models/Order.js
+orderSchema.index({ businessId: 1, createdAt: -1 });
+orderSchema.index({ businessId: 1, status: 1, createdAt: -1 });
+orderSchema.index({ businessId: 1, status: 1, servedAt: 1 });
 orderSchema.plugin(tenantGuard);
 export default mongoose.model("Order", orderSchema);
 export { orderItemSchema };

@@ -27,5 +27,7 @@ const inventoryItemSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+// models/InventoryItem.js
+inventoryItemSchema.index({ businessId: 1, isActive: 1, name: 1 });
 inventoryItemSchema.plugin(tenantGuard);
 export default mongoose.model("InventoryItem", inventoryItemSchema);
