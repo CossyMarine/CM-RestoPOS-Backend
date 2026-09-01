@@ -93,7 +93,13 @@ resetTokenExpires: { type: Date, select: false },
 );
 // models/User.js
 userSchema.index({ businessId: 1, role: 1, isActive: 1, fullName: 1 });
-userSchema.index({ businessId: 1, email: 1 }, { unique: true, sparse: true });
-userSchema.index({ businessId: 1, phone: 1 }, { unique: true, sparse: true });
+userSchema.index(
+  { businessId: 1, email: 1 },
+  { unique: true, partialFilterExpression: { email: { $type: "string" } } }
+);
+userSchema.index(
+  { businessId: 1, phone: 1 },
+  { unique: true, partialFilterExpression: { phone: { $type: "string" } } }
+);
 userSchema.plugin(tenantGuard);
 export default mongoose.model("User", userSchema);
