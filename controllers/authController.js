@@ -68,6 +68,7 @@ export const login = async (req, res) => {
 
     const user = await User.findOne({
       $or: [{ email: value }, { phone: identifier }],
+      _bypassTenantGuard: true,
     });
 
     if (!user) {
