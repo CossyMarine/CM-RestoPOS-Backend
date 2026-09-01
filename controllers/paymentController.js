@@ -2,6 +2,7 @@
 // Powers the admin "Payments" page: a flat, filterable/searchable feed of every
 // payment ever recorded (cash, till, STK, reward...) plus the queue of
 // customer-submitted manual-till payments still waiting for admin confirmation.
+import mongoose from "mongoose";
 import Receipt from "../models/Receipt.js";
 import { applyPaymentToReceipt } from "../utils/walletPayments.js";
 import { getDateRangePreset } from "../utils/dateHelpers.js";
@@ -28,11 +29,15 @@ const resolveDateRange = ({ preset, from, to }) => {
 // @access  Protected — admin, accountant
 export const getTransactions = async (req, res) => {
   try {
+    const { businessId } = req;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, parseInt(req.query.limit) || 15);
     const { method, q, from, to, preset } = req.query;
 
-    const pipeline = [{ $unwind: "$payments" }];
+    const pipeline = [
+      { $match: { businessId: new mongoose.Types.ObjectId(businessId) } },
+      { $unwind: "$payments" },
+    ];
 
     const matchStage = {};
     if (method) matchStage["payments.method"] = method;
@@ -121,10 +126,14 @@ export const getTransactions = async (req, res) => {
 // @access  Protected — admin, accountant
 export const getPaymentSummary = async (req, res) => {
   try {
+    const { businessId } = req;
     const { from, to, preset } = req.query;
     const dateRange = resolveDateRange({ preset, from, to });
 
-    const pipeline = [{ $unwind: "$payments" }];
+    const pipeline = [
+      { $match: { businessId: new mongoose.Types.ObjectId(businessId) } },
+      { $unwind: "$payments" },
+    ];
     if (dateRange) pipeline.push({ $match: { "payments.paidAt": dateRange } });
 
     pipeline.push({
@@ -175,7 +184,11 @@ export const getPaymentSummary = async (req, res) => {
 // @access  Protected — admin, accountant
 export const getPendingManualPayments = async (req, res) => {
   try {
-    const receipts = await Receipt.find({ "pendingManualPayments.0": { $exists: true } })
+    const { businessId } = req;
+    const receipts = await Receipt.find({
+      businessId,
+      "pendingManualPayments.0": { $exists: true },
+    })
       .populate("pendingManualPayments.paidBy", "fullName")
       .sort({ updatedAt: -1 });
 
@@ -213,7 +226,9 @@ export const getPendingManualPayments = async (req, res) => {
 // @access  Protected — admin, accountant
 export const getPendingManualPaymentsCount = async (req, res) => {
   try {
+    const { businessId } = req;
     const result = await Receipt.aggregate([
+      { $match: { businessId: new mongoose.Types.ObjectId(businessId) } },
       { $project: { count: { $size: { $ifNull: ["$pendingManualPayments", []] } } } },
       { $group: { _id: null, total: { $sum: "$count" } } },
     ]);
@@ -230,8 +245,9 @@ export const getPendingManualPaymentsCount = async (req, res) => {
 // @access  Protected — admin
 export const confirmManualPayment = async (req, res) => {
   const { receiptId, paymentId } = req.params;
+  const { businessId } = req;
   try {
-    const receipt = await Receipt.findById(receiptId);
+    const receipt = await Receipt.findOne({ _id: receiptId, businessId });
     if (!receipt) return res.status(404).json({ message: "Bill not found" });
 
     const entry = receipt.pendingManualPayments.id(paymentId);
@@ -265,8 +281,9 @@ export const confirmManualPayment = async (req, res) => {
 // @access  Protected — admin
 export const rejectManualPayment = async (req, res) => {
   const { receiptId, paymentId } = req.params;
+  const { businessId } = req;
   try {
-    const receipt = await Receipt.findById(receiptId);
+    const receipt = await Receipt.findOne({ _id: receiptId, businessId });
     if (!receipt) return res.status(404).json({ message: "Bill not found" });
 
     const entry = receipt.pendingManualPayments.id(paymentId);

@@ -33,9 +33,10 @@ export { addItemsToReceipt, markReceiptPrinted, applyDiscount } from "./receipt/
 export const payReceipt = async (req, res) => {
   const { id } = req.params;
   const { amountPaid } = req.body;
+  const { businessId } = req;
 
   try {
-    const receipt = await Receipt.findById(id);
+    const receipt = await Receipt.findOne({ _id: id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
     if (receipt.status !== "unpaid") {
@@ -71,7 +72,15 @@ const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
 
     await receipt.save();
 
-    await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: receipt.order, businessId },
+      { status: "completed" }
+    );
+    if (!updatedOrder) {
+      console.warn(
+        `payReceipt: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+      );
+    }
 
     const io = req.app.get("io");
     io.emit("receipt:paid", receipt);
@@ -117,7 +126,20 @@ const finalizeMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) => {
 
   await receipt.save();
 
-  await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
+  // No req here — finalizeMpesaSuccess is shared by the staff-initiated flow
+  // AND the Safaricom webhook/poll path, neither of which can be trusted to
+  // always have req.businessId. The receipt is already a tenant-scoped doc
+  // (it was fetched with businessId or _bypassTenantGuard earlier), so scope
+  // off of it instead.
+  const updatedOrder = await Order.findOneAndUpdate(
+    { _id: receipt.order, businessId: receipt.businessId },
+    { status: "completed" }
+  );
+  if (!updatedOrder) {
+    console.warn(
+      `finalizeMpesaSuccess: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${receipt.businessId} — possible cross-tenant data issue`
+    );
+  }
 
   io.emit("receipt:paid", receipt);
   io.emit("mpesa:result", {
@@ -178,9 +200,10 @@ const finalizeMpesaFailure = async ({ receipt, resultDesc, io }) => {
 export const initiateMpesaPayment = async (req, res) => {
   const { id } = req.params;
   let { phone, cashAmount } = req.body;
+  const { businessId } = req;
 
   try {
-    const receipt = await Receipt.findById(id);
+    const receipt = await Receipt.findOne({ _id: id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
     if (receipt.status !== "unpaid") {
@@ -268,7 +291,14 @@ export const mpesaCallback = async (req, res) => {
 
     const { CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = callback;
 
-    const receipt = await Receipt.findOne({ mpesaCheckoutRequestId: CheckoutRequestID });
+    // Public webhook — the business isn't known in advance, so this has to
+    // bypass tenant scoping the same way login does. This filter was
+    // previously missing businessId with no bypass flag, which meant
+    // TenantGuard was rejecting every M-Pesa callback outright.
+    const receipt = await Receipt.findOne({
+      mpesaCheckoutRequestId: CheckoutRequestID,
+      _bypassTenantGuard: true,
+    });
     if (!receipt || !["unpaid", "partial"].includes(receipt.status)) {
       return res.status(200).json({ message: "Receipt not found or already settled" });
     }
@@ -301,8 +331,9 @@ export const mpesaCallback = async (req, res) => {
 // @route   GET /api/receipts/:id/mpesa/status
 // @access  Protected — admin
 export const getMpesaStatus = async (req, res) => {
+  const { businessId } = req;
   try {
-    const receipt = await Receipt.findById(req.params.id);
+    const receipt = await Receipt.findOne({ _id: req.params.id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
 
     if (receipt.status === "paid") {
@@ -345,8 +376,9 @@ export const getMpesaStatus = async (req, res) => {
 // @route   POST /api/receipts/:id/mpesa/cancel
 // @access  Protected — admin
 export const cancelMpesaPayment = async (req, res) => {
+  const { businessId } = req;
   try {
-    const receipt = await Receipt.findById(req.params.id);
+    const receipt = await Receipt.findOne({ _id: req.params.id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
 
     receipt.mpesaStatus = "idle";
@@ -375,9 +407,10 @@ export const cancelMpesaPayment = async (req, res) => {
 export const payCashAndTill = async (req, res) => {
   const { id } = req.params;
   let { cashAmount } = req.body;
+  const { businessId } = req;
 
   try {
-    const receipt = await Receipt.findById(id);
+    const receipt = await Receipt.findOne({ _id: id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
     if (receipt.status !== "unpaid") {
@@ -416,7 +449,15 @@ export const payCashAndTill = async (req, res) => {
 
     await receipt.save();
 
-    await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: receipt.order, businessId },
+      { status: "completed" }
+    );
+    if (!updatedOrder) {
+      console.warn(
+        `payCashAndTill: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+      );
+    }
 
     const io = req.app.get("io");
     io.emit("receipt:paid", receipt);
@@ -453,8 +494,10 @@ export const payCombo = async (req, res) => {
     return res.status(400).json({ message: "Enter at least one amount" });
   }
 
+  const { businessId } = req;
+
   try {
-    const receipt = await Receipt.findById(id);
+    const receipt = await Receipt.findOne({ _id: id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
     if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
@@ -518,7 +561,15 @@ export const payCombo = async (req, res) => {
     }
 
     if (receipt.status === "paid") {
-      await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
+      const updatedOrder = await Order.findOneAndUpdate(
+        { _id: receipt.order, businessId },
+        { status: "completed" }
+      );
+      if (!updatedOrder) {
+        console.warn(
+          `payCombo: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+        );
+      }
     }
 
     if (io) {
