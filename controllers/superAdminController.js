@@ -1,5 +1,6 @@
 import Business from "../models/Business.js";
 import User from "../models/User.js";
+import AdminSettings from "../models/AdminSettings.js";
 import bcrypt from "bcryptjs";
 import { seedDefaultInventoryLocations } from "../models/InventoryLocation.js";
 
@@ -31,6 +32,7 @@ export const createBusiness = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 // @desc    List all businesses on the platform
 // @route   GET /api/superadmin/businesses
 export const listBusinesses = async (req, res) => {
@@ -103,6 +105,32 @@ export const createBusinessAdmin = async (req, res) => {
       message: "Business admin created",
       admin: { id: admin._id, fullName: admin.fullName, email: admin.email, phone: admin.phone },
     });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc    Configure a business's payment/tax settings — used during
+//          onboarding, before that business's own admin has ever logged in
+// @route   PATCH /api/superadmin/businesses/:id/settings
+export const configureBusinessSettings = async (req, res) => {
+  try {
+    const businessId = req.params.id;
+    const business = await Business.findById(businessId);
+    if (!business) return res.status(404).json({ message: "Business not found" });
+
+    const { tillNumber, tillName, tax } = req.body;
+
+    const settings = await AdminSettings.getSettings(businessId);
+    if (tillNumber !== undefined) settings.tillNumber = tillNumber;
+    if (tillName !== undefined) settings.tillName = tillName;
+    if (tax && typeof tax === "object") {
+      const current = settings.tax.toObject ? settings.tax.toObject() : settings.tax;
+      settings.tax = { ...current, ...tax };
+    }
+    await settings.save();
+
+    res.json({ message: "Settings configured", settings });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }

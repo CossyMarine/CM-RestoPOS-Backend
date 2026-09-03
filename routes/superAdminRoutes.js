@@ -5,6 +5,7 @@ import {
   listBusinesses,
   toggleBusinessStatus,
   createBusinessAdmin,
+  configureBusinessSettings,
   getPlatformOverview,
 } from "../controllers/superAdminController.js";
 
@@ -17,5 +18,9 @@ router.get("/businesses", listBusinesses);
 router.post("/businesses", createBusiness);
 router.patch("/businesses/:id/status", toggleBusinessStatus);
 router.post("/businesses/:id/admin", createBusinessAdmin);
+router.patch("/businesses/:id/settings", configureBusinessSettings);
 
 export default router;
+
+
+
