@@ -1,5 +1,6 @@
 // controllers/settingsController.js
 import AdminSettings from "../models/AdminSettings.js";
+import { resolvePublicBusinessId } from "../utils/resolvePublicBusinessId.js";
 
 // @desc    Get full admin settings
 // @route   GET /api/settings
@@ -46,7 +47,7 @@ const { tillNumber, tillName, whatsappNumber, callNumber, reward, tax, assumeTab
 
 export const getPublicSettings = async (req, res) => {
   try {
-    const { businessId } = req.query;
+    const businessId = await resolvePublicBusinessId(req);
     if (!businessId) {
       return res.status(400).json({ message: "Missing business — scan the table QR code again" });
     }

@@ -2,6 +2,7 @@
 import MenuItem from "../models/MenuItem.js";
 import { cloudinary } from "../Config/cloudinary.js";
 import { redisService } from "../routes/services/redis.service.js";
+import { resolvePublicBusinessId } from "../utils/resolvePublicBusinessId.js";
 
 // @desc    Get all available menu items (pinned items always first)
 // @route   GET /api/menu?businessId=<id>
@@ -21,7 +22,7 @@ import { redisService } from "../routes/services/redis.service.js";
 // suffix — see redisService.del calls below).
 export const getMenu = async (req, res) => {
   try {
-    const { businessId } = req.query;
+    const businessId = await resolvePublicBusinessId(req);
     if (!businessId) {
       return res.status(400).json({ message: "Missing business — scan the table QR code again" });
     }

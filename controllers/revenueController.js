@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Receipt from "../models/Receipt.js";
 import { getKenyanDayBounds, getDateRangePreset } from "../utils/dateHelpers.js";
 import { redisService } from "../routes/services/redis.service.js";
+import { resolvePublicBusinessId } from "../utils/resolvePublicBusinessId.js";
 
 const REDIS_TTL_SECONDS = 30;
 
@@ -19,7 +20,7 @@ const REDIS_TTL_SECONDS = 30;
 // look.
 export const getTodayRevenue = async (req, res) => {
   try {
-    const { businessId } = req.query;
+    const businessId = await resolvePublicBusinessId(req);
     if (!businessId) {
       return res.status(400).json({ message: "Missing businessId" });
     }
