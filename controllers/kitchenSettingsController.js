@@ -7,7 +7,7 @@ import NotificationSound from "../models/NotificationSound.js";
 // @access  Protected — kitchen, admin
 export const getKitchenSettings = async (req, res) => {
   try {
-    const settings = await KitchenSettings.getSettings();
+    const settings = await KitchenSettings.getSettings(req.businessId);
     res.json(settings);
   } catch (error) {
     console.error("Error fetching kitchen settings:", error.message);
@@ -29,8 +29,10 @@ export const updateKitchenSettings = async (req, res) => {
     notificationSoundId, // string id from the library, or null/"" to clear
   } = req.body;
 
+  const { businessId } = req;
+
   try {
-    const settings = await KitchenSettings.getSettings();
+    const settings = await KitchenSettings.getSettings(businessId);
     if (sortOrder !== undefined) settings.sortOrder = sortOrder;
     if (requireClickToServe !== undefined) settings.requireClickToServe = requireClickToServe;
     if (cardSize !== undefined) settings.cardSize = cardSize;
@@ -44,7 +46,7 @@ export const updateKitchenSettings = async (req, res) => {
         settings.notificationSoundUrl = null;
         settings.notificationSoundName = null;
       } else {
-        const sound = await NotificationSound.findById(notificationSoundId);
+        const sound = await NotificationSound.findOne({ _id: notificationSoundId, businessId });
         if (!sound) {
           return res.status(404).json({ message: "Notification sound not found" });
         }

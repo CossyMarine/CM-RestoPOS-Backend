@@ -7,7 +7,7 @@ import VoidRequest from "../models/VoidRequest.js";
 // @access  Protected — admin
 export const getVoidRequests = async (req, res) => {
   try {
-    const voidRequests = await VoidRequest.find({ status: "pending" })
+    const voidRequests = await VoidRequest.find({ businessId: req.businessId, status: "pending" })
       .populate("receipt")
       .populate("requestedBy", "fullName")
       .sort({ createdAt: -1 });
@@ -24,10 +24,11 @@ export const getVoidRequests = async (req, res) => {
 // @access  Protected — cashier, manager, admin
 export const createVoidRequest = async (req, res) => {
   try {
+    const { businessId } = req;
     const { receiptId, reason } = req.body;
     const requestedBy = req.user._id;
 
-    const receipt = await Receipt.findById(receiptId);
+    const receipt = await Receipt.findOne({ _id: receiptId, businessId });
     if (!receipt) {
       return res.status(404).json({ message: "Receipt not found" });
     }
@@ -36,6 +37,7 @@ export const createVoidRequest = async (req, res) => {
     }
 
     const voidRequest = await VoidRequest.create({
+      businessId,
       receipt: receiptId,
       requestedBy,
       reason,
@@ -57,10 +59,11 @@ export const createVoidRequest = async (req, res) => {
 export const approveVoidRequest = async (req, res) => {
   const { id } = req.params;
   const reviewedBy = req.user._id;
+  const { businessId } = req;
 
   try {
-    const voidRequest = await VoidRequest.findByIdAndUpdate(
-      id,
+    const voidRequest = await VoidRequest.findOneAndUpdate(
+      { _id: id, businessId },
       { status: "approved", reviewedBy, reviewedAt: new Date() },
       { new: true }
     );
@@ -69,7 +72,15 @@ export const approveVoidRequest = async (req, res) => {
       return res.status(404).json({ message: "Void request not found" });
     }
 
-    await Receipt.findByIdAndUpdate(voidRequest.receipt, { status: "voided" });
+    const voidedReceipt = await Receipt.findOneAndUpdate(
+      { _id: voidRequest.receipt, businessId },
+      { status: "voided" }
+    );
+    if (!voidedReceipt) {
+      console.warn(
+        `approveVoidRequest: voidRequest ${voidRequest._id} references receipt ${voidRequest.receipt}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+      );
+    }
 
     const io = req.app.get("io");
     io.emit("voidRequest:approved", voidRequest);
@@ -87,10 +98,11 @@ export const approveVoidRequest = async (req, res) => {
 export const rejectVoidRequest = async (req, res) => {
   const { id } = req.params;
   const reviewedBy = req.user._id;
+  const { businessId } = req;
 
   try {
-    const voidRequest = await VoidRequest.findByIdAndUpdate(
-      id,
+    const voidRequest = await VoidRequest.findOneAndUpdate(
+      { _id: id, businessId },
       { status: "rejected", reviewedBy, reviewedAt: new Date() },
       { new: true }
     );

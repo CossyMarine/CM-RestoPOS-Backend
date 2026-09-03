@@ -1,4 +1,5 @@
 // controllers/reportsController.js
+import mongoose from "mongoose";
 import Receipt from "../models/Receipt.js";
 import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 
@@ -8,11 +9,21 @@ import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 // reports are all built from — they're the same underlying breakdown at
 // different date ranges and with different columns surfaced on the
 // frontend, not three separate calculations.
-const buildSalesReport = async ({ startDate, endDate, groupBy }) => {
+//
+// businessId is required — this helper has no `req` of its own, so every
+// caller (getDailyReport, getMonthlyReport, getTaxReport) must pass its
+// own req.businessId through explicitly.
+const buildSalesReport = async ({ startDate, endDate, groupBy, businessId }) => {
   const dateFormat = groupBy === "month" ? "%Y-%m" : "%Y-%m-%d";
 
   const rows = await Receipt.aggregate([
-    { $match: { status: "paid", paidAt: { $gte: startDate, $lte: endDate } } },
+    {
+      $match: {
+        businessId: new mongoose.Types.ObjectId(businessId),
+        status: "paid",
+        paidAt: { $gte: startDate, $lte: endDate },
+      },
+    },
     {
       $group: {
         _id: { $dateToString: { format: dateFormat, date: "$paidAt", timezone: "Africa/Nairobi" } },
@@ -58,7 +69,7 @@ const buildSalesReport = async ({ startDate, endDate, groupBy }) => {
 export const getDailyReport = async (req, res) => {
   try {
     const { start, end } = getKenyanDayBounds(req.query.date || undefined);
-    const report = await buildSalesReport({ startDate: start, endDate: end, groupBy: "day" });
+    const report = await buildSalesReport({ startDate: start, endDate: end, groupBy: "day", businessId: req.businessId });
     res.json(report);
   } catch (error) {
     console.error("Error building daily report:", error.message);
@@ -76,7 +87,7 @@ export const getMonthlyReport = async (req, res) => {
     const month = req.query.month ? parseInt(req.query.month) - 1 : now.getMonth();
     const startDate = new Date(year, month, 1, 0, 0, 0);
     const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
-    const report = await buildSalesReport({ startDate, endDate, groupBy: "day" });
+    const report = await buildSalesReport({ startDate, endDate, groupBy: "day", businessId: req.businessId });
     res.json(report);
   } catch (error) {
     console.error("Error building monthly report:", error.message);
@@ -99,7 +110,7 @@ export const getTaxReport = async (req, res) => {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     }
-    const report = await buildSalesReport({ startDate, endDate, groupBy: "day" });
+    const report = await buildSalesReport({ startDate, endDate, groupBy: "day", businessId: req.businessId });
     res.json(report);
   } catch (error) {
     console.error("Error building tax report:", error.message);

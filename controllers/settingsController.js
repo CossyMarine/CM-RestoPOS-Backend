@@ -6,7 +6,7 @@ import AdminSettings from "../models/AdminSettings.js";
 // @access  Protected — admin
 export const getSettings = async (req, res) => {
   try {
-    const settings = await AdminSettings.getSettings();
+    const settings = await AdminSettings.getSettings(req.businessId);
     res.json(settings);
   } catch (error) {
     console.error("Error fetching settings:", error.message);
@@ -21,7 +21,7 @@ export const getSettings = async (req, res) => {
 export const updateSettings = async (req, res) => {
 const { tillNumber, tillName, whatsappNumber, callNumber, reward, tax, assumeTableNumberCustomer, assumeTableNumberWaiter,allowPrintingDuringPayment } = req.body;
      try {
-    const settings = await AdminSettings.getSettings();
+    const settings = await AdminSettings.getSettings(req.businessId);
     if (tillNumber !== undefined) settings.tillNumber = tillNumber;
     if (tillName !== undefined) settings.tillName = tillName;
     if (whatsappNumber !== undefined) settings.whatsappNumber = whatsappNumber;
@@ -46,7 +46,11 @@ const { tillNumber, tillName, whatsappNumber, callNumber, reward, tax, assumeTab
 
 export const getPublicSettings = async (req, res) => {
   try {
-    const s = await AdminSettings.getSettings();
+    const { businessId } = req.query;
+    if (!businessId) {
+      return res.status(400).json({ message: "Missing business — scan the table QR code again" });
+    }
+    const s = await AdminSettings.getSettings(businessId);
     res.json({
       tillNumber: s.tillNumber,
       tillName: s.tillName,

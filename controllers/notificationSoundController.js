@@ -8,7 +8,7 @@ import { cloudinary } from "../Config/cloudinary.js";
 // @access  Protected — kitchen, admin
 export const getNotificationSounds = async (req, res) => {
   try {
-    const sounds = await NotificationSound.find().sort({ name: 1 });
+    const sounds = await NotificationSound.find({ businessId: req.businessId }).sort({ name: 1 });
     res.json(sounds);
   } catch (error) {
     console.error("Error fetching notification sounds:", error.message);
@@ -32,6 +32,7 @@ export const uploadNotificationSound = async (req, res) => {
     }
 
     const sound = await NotificationSound.create({
+      businessId: req.businessId,
       name: name.trim(),
       url: req.file.path,       // Cloudinary secure URL
       publicId: req.file.filename,
@@ -49,7 +50,8 @@ export const uploadNotificationSound = async (req, res) => {
 // @access  Protected — admin
 export const deleteNotificationSound = async (req, res) => {
   try {
-    const sound = await NotificationSound.findById(req.params.id);
+    const { businessId } = req;
+    const sound = await NotificationSound.findOne({ _id: req.params.id, businessId });
     if (!sound) {
       return res.status(404).json({ message: "Sound not found" });
     }
@@ -59,7 +61,7 @@ export const deleteNotificationSound = async (req, res) => {
 
     // If this was the active kitchen alarm, fall back to the built-in beep
     // rather than leaving the kitchen page pointing at a dead URL.
-    const settings = await KitchenSettings.getSettings();
+    const settings = await KitchenSettings.getSettings(businessId);
     if (settings.notificationSoundId?.toString() === req.params.id) {
       settings.notificationSoundId = null;
       settings.notificationSoundUrl = null;
