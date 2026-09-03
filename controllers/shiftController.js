@@ -14,6 +14,7 @@ import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 export const openShift = async (req, res) => {
   const { openingFloat } = req.body;
   const openedBy = req.user._id;
+  const { businessId } = req;
 
   // Only accountants (and admins) ever handle money — a float is a starting
   // cash amount to reconcile against later. Waiters and kitchen staff never
@@ -27,12 +28,12 @@ export const openShift = async (req, res) => {
   }
 
   try {
-    const existing = await Shift.findOne({ openedBy, status: "open" });
+    const existing = await Shift.findOne({ businessId, openedBy, status: "open" });
     if (existing) {
       return res.status(400).json({ message: "You already have a shift open", shift: existing });
     }
 
-    const shift = await Shift.create({ openedBy, openingFloat: floatApplies ? openingFloat : 0 });
+    const shift = await Shift.create({ businessId, openedBy, openingFloat: floatApplies ? openingFloat : 0 });
 
     const io = req.app.get("io");
     io.emit("shift:opened", shift);
@@ -48,7 +49,8 @@ export const openShift = async (req, res) => {
 // @access  Protected
 export const getCurrentShift = async (req, res) => {
   try {
-    const shift = await Shift.findOne({ openedBy: req.user._id, status: "open" }).populate("openedBy", "fullName");
+    const { businessId } = req;
+    const shift = await Shift.findOne({ businessId, openedBy: req.user._id, status: "open" }).populate("openedBy", "fullName");
     res.json(shift);
   } catch (error) {
     console.error("Error fetching current shift:", error.message);
@@ -64,6 +66,7 @@ export const addPettyCash = async (req, res) => {
   const { id } = req.params;
   const { amount, reason } = req.body;
   const loggedBy = req.user._id;
+  const { businessId } = req;
 
   if (!amount || isNaN(amount) || amount <= 0) {
     return res.status(400).json({ message: "amount must be a positive number" });
@@ -73,7 +76,7 @@ export const addPettyCash = async (req, res) => {
   }
 
   try {
-    const shift = await Shift.findById(id);
+    const shift = await Shift.findOne({ _id: id, businessId });
     if (!shift) return res.status(404).json({ message: "Shift not found" });
     if (!req.user.isAdmin && req.user.role !== "waiter" && String(shift.openedBy) !== String(req.user._id)) {
       return res.status(403).json({ message: "This isn't your shift" });
@@ -82,7 +85,7 @@ export const addPettyCash = async (req, res) => {
       return res.status(400).json({ message: "Cannot log petty cash against a closed shift" });
     }
 
-    const entry = await PettyCash.create({ shift: id, amount, reason: reason.trim(), loggedBy });
+    const entry = await PettyCash.create({ businessId, shift: id, amount, reason: reason.trim(), loggedBy });
 
     const io = req.app.get("io");
     io.emit("shift:pettyCashAdded", entry);
@@ -101,11 +104,15 @@ export const addPettyCash = async (req, res) => {
 //
 // Also now reports ordersCount and voidCount so the close-shift summary
 // modal can show "today's orders" and "today's void" alongside the sale total.
- export const computeShiftSummary = async (shiftId) => {
-  const shift = await Shift.findById(shiftId).populate("openedBy", "fullName").populate("closedBy", "fullName");
+//
+// businessId is required — this helper has no `req` of its own, so every
+// caller (getShiftSummary, closeShift, getShiftReport) must pass its own
+// req.businessId through explicitly.
+export const computeShiftSummary = async (shiftId, businessId) => {
+  const shift = await Shift.findOne({ _id: shiftId, businessId }).populate("openedBy", "fullName").populate("closedBy", "fullName");
   if (!shift) return null;
 
-  const receipts = await Receipt.find({ shift: shiftId, status: { $in: ["paid", "partial"] } });
+  const receipts = await Receipt.find({ businessId, shift: shiftId, status: { $in: ["paid", "partial"] } });
 
   const totals = { cash: 0, till: 0, prompt: 0, reward: 0 };
   receipts.forEach((r) => {
@@ -117,14 +124,15 @@ export const addPettyCash = async (req, res) => {
     });
   });
 
-  const voidedReceipts = await Receipt.find({ shift: shiftId, status: "voided" });
+  const voidedReceipts = await Receipt.find({ businessId, shift: shiftId, status: "voided" });
 const voidedTotal = voidedReceipts.reduce((sum, r) => sum + (r.totalDue ?? r.subtotal), 0);  const voidCount = voidedReceipts.length;
 
-  const pettyEntries = await PettyCash.find({ shift: shiftId });
+  const pettyEntries = await PettyCash.find({ businessId, shift: shiftId });
   const pettyCashOut = pettyEntries.reduce((sum, e) => sum + e.amount, 0);
 
-  const shiftReceiptIds = await Receipt.find({ shift: shiftId }).distinct("_id");
+  const shiftReceiptIds = await Receipt.find({ businessId, shift: shiftId }).distinct("_id");
   const pendingVoidRequests = await VoidRequest.countDocuments({
+    businessId,
     status: "pending",
     receipt: { $in: shiftReceiptIds },
   });
@@ -133,6 +141,7 @@ const voidedTotal = voidedReceipts.reduce((sum, r) => sum + (r.totalDue ?? r.sub
   // falls back to 0 when the shift wasn't opened against a named waiter.
   const ordersCount = shift.openedBy?.fullName
     ? await Order.countDocuments({
+        businessId,
         waiterName: shift.openedBy.fullName,
         createdAt: { $gte: shift.createdAt, ...(shift.closedAt ? { $lte: shift.closedAt } : {}) },
       })
@@ -181,13 +190,14 @@ const voidedTotal = voidedReceipts.reduce((sum, r) => sum + (r.totalDue ?? r.sub
 // @access  Protected
 export const getShiftSummary = async (req, res) => {
   const { id } = req.params;
+  const { businessId } = req;
   try {
-    const shift = await Shift.findById(id);
+    const shift = await Shift.findOne({ _id: id, businessId });
     if (!shift) return res.status(404).json({ message: "Shift not found" });
     if (!req.user.isAdmin && req.user.role !== "waiter" && String(shift.openedBy) !== String(req.user._id)) {
       return res.status(403).json({ message: "This isn't your shift" });
     }
-    const summary = await computeShiftSummary(id);
+    const summary = await computeShiftSummary(id, businessId);
     res.json(summary);
   } catch (error) {
     console.error("Error computing shift summary:", error.message);
@@ -203,9 +213,10 @@ export const closeShift = async (req, res) => {
   const { id } = req.params;
   const { closingCashCount, closingTillCount, tipsDeclared, notes } = req.body;
   const closedBy = req.user._id;
+  const { businessId } = req;
 
   try {
-    const shift = await Shift.findById(id).populate("openedBy", "role fullName");
+    const shift = await Shift.findOne({ _id: id, businessId }).populate("openedBy", "role fullName");
     if (!shift) return res.status(404).json({ message: "Shift not found" });
     if (!req.user.isAdmin && req.user.role !== "waiter" && String(shift.openedBy._id) !== String(req.user._id)) {
       return res.status(403).json({ message: "This isn't your shift" });
@@ -238,7 +249,7 @@ export const closeShift = async (req, res) => {
     shift.status = "closed";
     await shift.save();
 
-    const summary = await computeShiftSummary(id);
+    const summary = await computeShiftSummary(id, businessId);
 
     const io = req.app.get("io");
     io.emit("shift:closed", summary);
@@ -256,8 +267,9 @@ export const closeShift = async (req, res) => {
 export const getShiftHistory = async (req, res) => {
   const { userId } = req.params;
   const { from, to } = req.query;
+  const { businessId } = req;
   try {
-    const query = { openedBy: userId };
+    const query = { businessId, openedBy: userId };
     if (from || to) {
       query.createdAt = {};
       if (from) query.createdAt.$gte = new Date(from);
@@ -276,6 +288,7 @@ export const getShiftHistory = async (req, res) => {
 // @access  Protected — admin
 export const getShiftReport = async (req, res) => {
   try {
+    const { businessId } = req;
     let startDate, endDate;
     if (req.query.startDate && req.query.endDate) {
       startDate = getKenyanDayBounds(req.query.startDate).start;
@@ -287,8 +300,8 @@ export const getShiftReport = async (req, res) => {
       endDate = getKenyanDayBounds().end;
     }
 
-    const shifts = await Shift.find({ createdAt: { $gte: startDate, $lte: endDate } }).sort({ createdAt: -1 });
-    const rows = await Promise.all(shifts.map((s) => computeShiftSummary(s._id)));
+    const shifts = await Shift.find({ businessId, createdAt: { $gte: startDate, $lte: endDate } }).sort({ createdAt: -1 });
+    const rows = await Promise.all(shifts.map((s) => computeShiftSummary(s._id, businessId)));
     res.json(rows);
   } catch (error) {
     console.error("Error building shift report:", error.message);
@@ -304,21 +317,22 @@ export const getShiftReport = async (req, res) => {
 export const openShiftForWaiter = async (req, res) => {
   const { waiterId } = req.params;
   const { openingFloat } = req.body;
+  const { businessId } = req;
 
   if (openingFloat === undefined || openingFloat === null || isNaN(openingFloat)) {
     return res.status(400).json({ message: "openingFloat is required and must be a number" });
   }
 
   try {
-    const waiter = await User.findOne({ _id: waiterId, role: "waiter" });
+    const waiter = await User.findOne({ _id: waiterId, role: "waiter", businessId });
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
 
-    const existing = await Shift.findOne({ openedBy: waiterId, status: "open" });
+    const existing = await Shift.findOne({ businessId, openedBy: waiterId, status: "open" });
     if (existing) {
       return res.status(400).json({ message: `${waiter.fullName} already has a shift open`, shift: existing });
     }
 
-    const shift = await Shift.create({ openedBy: waiterId, openingFloat });
+    const shift = await Shift.create({ businessId, openedBy: waiterId, openingFloat });
 
     const io = req.app.get("io");
     io.emit("shift:opened", shift);
@@ -337,8 +351,9 @@ export const openShiftForWaiter = async (req, res) => {
 // @access  Protected — waiter (station) or admin
 export const getShiftStatusForWaiter = async (req, res) => {
   const { waiterId } = req.params;
+  const { businessId } = req;
   try {
-    const shift = await Shift.findOne({ openedBy: waiterId, status: "open" });
+    const shift = await Shift.findOne({ businessId, openedBy: waiterId, status: "open" });
     res.json(shift);
   } catch (error) {
     console.error("Error fetching waiter shift status:", error.message);

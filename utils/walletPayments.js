@@ -25,13 +25,17 @@ export const computeCashback = (amountKes, settings) => {
 export const creditCashback = async (receipt, amount) => {
   if (!receipt.customer) return;
 
-  const settings = await AdminSettings.getSettings();
+  const settings = await AdminSettings.getSettings(receipt.businessId);
   const { points, kes } = computeCashback(amount, settings);
   if (points <= 0) return;
 
   receipt.rewardPointsEarned = (receipt.rewardPointsEarned || 0) + points;
-  await User.findByIdAndUpdate(receipt.customer, { $inc: { walletPoints: points } });
+  await User.findOneAndUpdate(
+    { _id: receipt.customer, businessId: receipt.businessId },
+    { $inc: { walletPoints: points } }
+  );
   await RewardTransaction.create({
+    businessId: receipt.businessId,
     user: receipt.customer,
     type: "earn",
     points,
@@ -63,7 +67,15 @@ export const applyPaymentToReceipt = async ({ receipt, amount, method, reference
   await receipt.save();
 
   if (receipt.status === "paid") {
-    await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: receipt.order, businessId: receipt.businessId },
+      { status: "completed" }
+    );
+    if (!updatedOrder) {
+      console.warn(
+        `applyPaymentToReceipt: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${receipt.businessId} — possible cross-tenant data issue`
+      );
+    }
   }
 
   if (io) {
@@ -77,7 +89,15 @@ export const applyPaymentToReceipt = async ({ receipt, amount, method, reference
 // Redeem `pointsToRedeem` from `user`'s reward balance against `receipt`'s
 // balance due. Redeems less than requested if the balance due is smaller.
 export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io }) => {
-  const settings = await AdminSettings.getSettings();
+  // Guard against redeeming a customer's points against a bill from a
+  // different business — findCustomerByIdentifier is now businessId-scoped
+  // at the call site, but this is cheap insurance against a future caller
+  // that isn't.
+  if (String(user.businessId) !== String(receipt.businessId)) {
+    throw new Error("This customer does not belong to the same business as this bill");
+  }
+
+  const settings = await AdminSettings.getSettings(receipt.businessId);
   const pointValue = settings.reward.pointValueKes || 1;
 
   const owed = receipt.totalDue ?? receipt.subtotal;
@@ -109,8 +129,12 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
   if (receipt.status === "paid") receipt.paidAt = new Date();
 
   await receipt.save();
-  await User.findByIdAndUpdate(user._id, { $inc: { walletPoints: -pointsUsed } });
+  await User.findOneAndUpdate(
+    { _id: user._id, businessId: receipt.businessId },
+    { $inc: { walletPoints: -pointsUsed } }
+  );
   await RewardTransaction.create({
+    businessId: receipt.businessId,
     user: user._id,
     type: "redeem",
     points: -pointsUsed,
@@ -120,7 +144,15 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
   });
 
   if (receipt.status === "paid") {
-    await Order.findByIdAndUpdate(receipt.order, { status: "completed" });
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: receipt.order, businessId: receipt.businessId },
+      { status: "completed" }
+    );
+    if (!updatedOrder) {
+      console.warn(
+        `applyRewardRedemption: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${receipt.businessId} — possible cross-tenant data issue`
+      );
+    }
   }
 
   if (io) {
@@ -131,8 +163,15 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
   return { receipt, pointsUsed, kesApplied: amountToApply };
 };
 // NEW — moved out of walletController.js so other controllers can reuse it
-export const findCustomerByIdentifier = (identifier) =>
+// Scoped to businessId: this is used from inside already-authenticated,
+// already-tenant-scoped flows (redeeming points, admin crediting a customer,
+// staff paying with a customer's reward balance) — NOT a login/signup path
+// where the business is still unknown. Without businessId here, staff in one
+// business could look up and act on a customer registered under a different
+// business by email/phone alone.
+export const findCustomerByIdentifier = (identifier, businessId) =>
   User.findOne({
     $or: [{ email: identifier.toLowerCase().trim() }, { phone: identifier.trim() }],
     role: "customer",
+    businessId,
   });

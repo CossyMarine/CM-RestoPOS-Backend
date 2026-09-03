@@ -521,11 +521,11 @@ export const payCombo = async (req, res) => {
       if (!rewardIdentifier || !rewardIdentifier.trim()) {
         return res.status(400).json({ message: "Customer email or phone is required to redeem reward points" });
       }
-      const customer = await findCustomerByIdentifier(rewardIdentifier);
+      const customer = await findCustomerByIdentifier(rewardIdentifier, businessId);
       if (!customer) {
         return res.status(404).json({ message: "No registered customer found with that email or phone" });
       }
-      const settings = await AdminSettings.getSettings();
+      const settings = await AdminSettings.getSettings(businessId);
       const pointValue = settings.reward.pointValueKes || 1;
       const pointsToRedeem = Math.ceil(rewardAmount / pointValue);
       if (pointsToRedeem > (customer.walletPoints || 0)) {

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import User from "../models/User.js";
 import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
@@ -12,9 +13,10 @@ function getDateRanges() {
 // @route GET /api/waiters/management?search=&status=all|active|inactive&sort=name|orders|sales|void
 export const getWaiterManagementList = async (req, res) => {
   try {
+    const { businessId } = req;
     const { search = "", status = "all", sort = "name" } = req.query;
 
-    const userFilter = { role: "waiter" };
+    const userFilter = { businessId, role: "waiter" };
     if (status === "active") userFilter.isActive = true;
     if (status === "inactive") userFilter.isActive = false;
     if (search) userFilter.fullName = { $regex: search, $options: "i" };
@@ -24,9 +26,10 @@ export const getWaiterManagementList = async (req, res) => {
 
     const names = waiters.map((w) => w.fullName);
     const { startOfToday, startOfWeek, startOfMonth, startOfYear } = getDateRanges();
+    const businessObjectId = new mongoose.Types.ObjectId(businessId);
 
     const orderStats = await Order.aggregate([
-      { $match: { waiterName: { $in: names } } },
+      { $match: { businessId: businessObjectId, waiterName: { $in: names } } },
       { $group: {
           _id: "$waiterName",
           today: { $sum: { $cond: [{ $gte: ["$createdAt", startOfToday] }, 1, 0] } },
@@ -38,11 +41,12 @@ export const getWaiterManagementList = async (req, res) => {
     ]);
 
     const billStats = await Receipt.aggregate([
-      { $match: { waiterName: { $in: names }, status: "paid" } },
+      { $match: { businessId: businessObjectId, waiterName: { $in: names }, status: "paid" } },
       { $group: { _id: "$waiterName", totalBalanceSold: { $sum: "$amountPaid" }, billsSold: { $sum: 1 } } },
     ]);
 
     const voidStats = await VoidRequest.aggregate([
+      { $match: { businessId: businessObjectId } },
       { $lookup: { from: "receipts", localField: "receipt", foreignField: "_id", as: "receiptDoc" } },
       { $unwind: "$receiptDoc" },
       { $match: { "receiptDoc.waiterName": { $in: names }, status: "approved" } },
@@ -86,19 +90,20 @@ export const getWaiterManagementList = async (req, res) => {
 // @route GET /api/waiters/management/:id
 export const getWaiterDetail = async (req, res) => {
   try {
-    const waiter = await User.findOne({ _id: req.params.id, role: "waiter" });
+    const { businessId } = req;
+    const waiter = await User.findOne({ _id: req.params.id, role: "waiter", businessId });
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
 
-    const recentBills = await Receipt.find({ waiterName: waiter.fullName }).sort({ createdAt: -1 }).limit(50);
-    const shiftHistory = await Shift.find({ openedBy: waiter._id }).sort({ createdAt: -1 }).limit(30);
+    const recentBills = await Receipt.find({ businessId, waiterName: waiter.fullName }).sort({ createdAt: -1 }).limit(50);
+    const shiftHistory = await Shift.find({ businessId, openedBy: waiter._id }).sort({ createdAt: -1 }).limit(30);
 
-    const orderCount = await Order.countDocuments({ waiterName: waiter.fullName });
+    const orderCount = await Order.countDocuments({ businessId, waiterName: waiter.fullName });
     const totalSales = await Receipt.aggregate([
-      { $match: { waiterName: waiter.fullName, status: "paid" } },
+      { $match: { businessId: new mongoose.Types.ObjectId(businessId), waiterName: waiter.fullName, status: "paid" } },
       { $group: { _id: null, sum: { $sum: "$amountPaid" } } },
     ]);
-    const voidCount = await VoidRequest.countDocuments(); // filtered below via receipt lookup for accuracy
     const voidAgg = await VoidRequest.aggregate([
+      { $match: { businessId: new mongoose.Types.ObjectId(businessId) } },
       { $lookup: { from: "receipts", localField: "receipt", foreignField: "_id", as: "r" } },
       { $unwind: "$r" },
       { $match: { "r.waiterName": waiter.fullName, status: "approved" } },
@@ -122,7 +127,7 @@ export const getWaiterDetail = async (req, res) => {
 // @route PATCH /api/waiters/management/:id/drop  — soft removal, keeps history
 export const dropWaiter = async (req, res) => {
   try {
-    const waiter = await User.findOne({ _id: req.params.id, role: "waiter" });
+    const waiter = await User.findOne({ _id: req.params.id, role: "waiter", businessId: req.businessId });
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
     waiter.isActive = false;
     waiter.hiddenFromSelector = true;
@@ -136,7 +141,7 @@ export const dropWaiter = async (req, res) => {
 // @route PATCH /api/waiters/management/:id/restore
 export const restoreWaiter = async (req, res) => {
   try {
-    const waiter = await User.findOne({ _id: req.params.id, role: "waiter" });
+    const waiter = await User.findOne({ _id: req.params.id, role: "waiter", businessId: req.businessId });
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
     waiter.isActive = true;
     waiter.hiddenFromSelector = false;
@@ -150,7 +155,7 @@ export const restoreWaiter = async (req, res) => {
 // @route DELETE /api/waiters/management/:id — permanent
 export const deleteWaiter = async (req, res) => {
   try {
-    const waiter = await User.findOneAndDelete({ _id: req.params.id, role: "waiter" });
+    const waiter = await User.findOneAndDelete({ _id: req.params.id, role: "waiter", businessId: req.businessId });
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
     res.json({ message: "Waiter removed permanently" });
   } catch (error) {
@@ -161,7 +166,7 @@ export const deleteWaiter = async (req, res) => {
 // @route GET /api/waiters/selector-list — ALL waiter accounts, for the visibility-management dropdown
 export const getSelectorList = async (req, res) => {
   try {
-    const waiters = await User.find({ role: "waiter" }).select("fullName isActive hiddenFromSelector").sort({ fullName: 1 });
+    const waiters = await User.find({ businessId: req.businessId, role: "waiter" }).select("fullName isActive hiddenFromSelector").sort({ fullName: 1 });
     res.json(waiters.map((w) => ({ id: w._id, fullName: w.fullName, isActive: w.isActive, hidden: !!w.hiddenFromSelector })));
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch selector list" });
@@ -172,7 +177,7 @@ export const getSelectorList = async (req, res) => {
 export const toggleWaiterVisibility = async (req, res) => {
   try {
     const { hidden } = req.body;
-    const waiter = await User.findOne({ _id: req.params.id, role: "waiter" });
+    const waiter = await User.findOne({ _id: req.params.id, role: "waiter", businessId: req.businessId });
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
     waiter.hiddenFromSelector = !!hidden;
     await waiter.save();
@@ -186,11 +191,12 @@ export const toggleWaiterVisibility = async (req, res) => {
 // Returns this waiter's current selector config + the full list of other waiters to pick from
 export const getWaiterSelectorSettings = async (req, res) => {
   try {
-    const waiter = await User.findOne({ _id: req.params.id, role: "waiter" })
+    const { businessId } = req;
+    const waiter = await User.findOne({ _id: req.params.id, role: "waiter", businessId })
       .select("fullName selectorMode visibleWaiters");
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
 
-    const allWaiters = await User.find({ role: "waiter", _id: { $ne: waiter._id } })
+    const allWaiters = await User.find({ businessId, role: "waiter", _id: { $ne: waiter._id } })
       .select("fullName isActive")
       .sort({ fullName: 1 });
 
@@ -217,7 +223,7 @@ export const updateWaiterSelectorSettings = async (req, res) => {
       return res.status(400).json({ message: "Invalid selector mode" });
     }
 
-    const waiter = await User.findOne({ _id: req.params.id, role: "waiter" });
+    const waiter = await User.findOne({ _id: req.params.id, role: "waiter", businessId: req.businessId });
     if (!waiter) return res.status(404).json({ message: "Waiter not found" });
 
     if (selectorMode) waiter.selectorMode = selectorMode;

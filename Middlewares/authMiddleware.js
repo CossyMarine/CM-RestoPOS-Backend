@@ -71,7 +71,7 @@ export const requirePermission = (key) => (req, res, next) => {
 export const requireOpenShift = async (req, res, next) => {
   if (req.user?.isAdmin) return next();
   try {
-    const shift = await Shift.findOne({ openedBy: req.user._id, status: "open" });
+    const shift = await Shift.findOne({ businessId: req.businessId, openedBy: req.user._id, status: "open" });
     if (!shift) {
       return res.status(403).json({ message: "Open your shift before processing payments." });
     }
@@ -94,11 +94,11 @@ export const requireOpenShiftForWaiter = (field = "waiterName") => async (req, r
   }
 
   try {
-    const waiterUser = await User.findOne({ fullName: waiterName, role: "waiter" }).select("_id");
+    const waiterUser = await User.findOne({ businessId: req.businessId, fullName: waiterName, role: "waiter" }).select("_id");
     if (!waiterUser) {
       return res.status(404).json({ message: `No waiter found named "${waiterName}"` });
     }
-    const openShift = await Shift.findOne({ openedBy: waiterUser._id, status: "open" });
+    const openShift = await Shift.findOne({ businessId: req.businessId, openedBy: waiterUser._id, status: "open" });
     if (!openShift) {
       return res.status(403).json({
         message: `${waiterName}'s shift is closed — open their shift before doing this.`,

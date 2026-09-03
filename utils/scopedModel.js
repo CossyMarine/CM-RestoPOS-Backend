@@ -1,4 +1,6 @@
 // utils/scopedModel.js
+import mongoose from "mongoose";
+
 class TenantContextError extends Error {
   constructor(modelName) {
     super(`TenantScope: no businessId available when accessing ${modelName}`);
@@ -28,7 +30,8 @@ export const scopeModel = (Model, businessId) => {
     findOneAndUpdate: (filter, update, opts) => Model.findOneAndUpdate(withFilter(filter), update, opts),
     deleteOne: (filter, ...rest) => Model.deleteOne(withFilter(filter), ...rest),
     deleteMany: (filter, ...rest) => Model.deleteMany(withFilter(filter), ...rest),
-    aggregate: (pipeline = []) => Model.aggregate([{ $match: { businessId } }, ...pipeline]),
+    aggregate: (pipeline = []) =>
+      Model.aggregate([{ $match: { businessId: new mongoose.Types.ObjectId(businessId) } }, ...pipeline]),
     raw: Model, // deliberate escape hatch for superadmin cross-tenant queries only
   };
 };

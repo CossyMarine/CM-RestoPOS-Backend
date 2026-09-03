@@ -1,4 +1,3 @@
-
 // controllers/authController.js
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -223,7 +222,7 @@ export const createUser = async (req, res) => {
     const cleanContact =
       method === "email" ? contact.toLowerCase().trim() : contact.trim();
 
-    const existing = await User.findOne({ [method]: cleanContact });
+    const existing = await User.findOne({ [method]: cleanContact, businessId: req.businessId });
     if (existing) {
       return res.status(400).json({
         message: "A user with that email/phone already exists",
@@ -264,8 +263,10 @@ export const createUser = async (req, res) => {
 export const getWaiters = async (req, res) => {
   try {
     const requester = req.user;
+    const { businessId } = req;
 
     const baseFilter = {
+      businessId,
       role: "waiter",
       isActive: true,
       hiddenFromSelector: { $ne: true },
@@ -301,6 +302,7 @@ export const getWaiters = async (req, res) => {
 export const getAllUsers = async (req, res) => {
   try {
     const users = await User.find({
+      businessId: req.businessId,
       $or: [{ isAdmin: true }, { role: { $ne: "customer" } }],
     }).sort({ createdAt: -1 });
 
@@ -317,7 +319,7 @@ export const getAllUsers = async (req, res) => {
 // @access  Protected — admin
 export const getAllUsersIncludingCustomers = async (req, res) => {
   try {
-    const users = await User.find({}).sort({ createdAt: -1 });
+    const users = await User.find({ businessId: req.businessId }).sort({ createdAt: -1 });
     res.json(users.map(adminUserView));
   } catch (error) {
     console.error("GET ALL USERS (INCL CUSTOMERS) ERROR:", error);
@@ -331,6 +333,7 @@ export const getAllUsersIncludingCustomers = async (req, res) => {
 export const getStaffCount = async (req, res) => {
   try {
     const totalStaff = await User.countDocuments({
+      businessId: req.businessId,
       $or: [{ isAdmin: true }, { role: { $ne: "customer" } }],
     });
 
@@ -351,12 +354,13 @@ export const updateUserRole = async (req, res) => {
   try {
     const { id } = req.params;
     const { isAdmin, role } = req.body;
+    const { businessId } = req;
 
     if (req.user._id.toString() === id) {
       return res.status(400).json({ message: "You can't change your own role" });
     }
 
-    const user = await User.findById(id);
+    const user = await User.findOne({ _id: id, businessId });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -399,6 +403,7 @@ export const updateUserRole = async (req, res) => {
 export const toggleUserStatus = async (req, res) => {
   try {
     const { id } = req.params;
+    const { businessId } = req;
 
     if (req.user._id.toString() === id) {
       return res.status(400).json({
@@ -406,7 +411,7 @@ export const toggleUserStatus = async (req, res) => {
       });
     }
 
-    const user = await User.findById(id);
+    const user = await User.findOne({ _id: id, businessId });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -432,7 +437,8 @@ export const toggleUserStatus = async (req, res) => {
 export const updateMe = async (req, res) => {
   try {
     let { fullName, email, phone } = req.body;
-    const user = await User.findById(req.user._id);
+    const { businessId } = req;
+    const user = await User.findOne({ _id: req.user._id, businessId });
 
     if (fullName !== undefined) {
       fullName = fullName.trim();
@@ -452,6 +458,7 @@ export const updateMe = async (req, res) => {
       if (cleanEmail !== (user.email || "")) {
         const taken = await User.findOne({
           email: cleanEmail,
+          businessId,
           _id: { $ne: user._id },
         });
 
@@ -471,6 +478,7 @@ export const updateMe = async (req, res) => {
       if (cleanPhone !== (user.phone || "")) {
         const taken = await User.findOne({
           phone: cleanPhone,
+          businessId,
           _id: { $ne: user._id },
         });
 
@@ -518,7 +526,7 @@ export const changePassword = async (req, res) => {
       return res.status(400).json({ message: "Password does not meet the requirements", requirements: passwordCheck.errors });
     }
 
-    const user = await User.findById(req.user._id); // req.user has password excluded, refetch full doc
+    const user = await User.findOne({ _id: req.user._id, businessId: req.businessId }); // req.user has password excluded, refetch full doc
     const isMatch = await bcrypt.compare(currentPassword, user.password);
 
     if (!isMatch) {
@@ -580,7 +588,7 @@ export const forgotPassword = async (req, res) => {
     const method = isEmail(value) ? "email" : "phone";
     const clean = method === "email" ? value.toLowerCase() : value;
 
-    const user = await User.findOne({ [method]: clean }).select(
+    const user = await User.findOne({ [method]: clean, _bypassTenantGuard: true }).select(
       "+resetCode +resetCodeExpires +resetCodeAttempts +resetCodeChannel +resetCodeLastSentAt"
     );
 
@@ -667,7 +675,7 @@ export const resendResetCode = async (req, res) => {
     const method = isEmail(value) ? "email" : "phone";
     const clean = method === "email" ? value.toLowerCase() : value;
 
-    const user = await User.findOne({ [method]: clean }).select(
+    const user = await User.findOne({ [method]: clean, _bypassTenantGuard: true }).select(
       "+resetCode +resetCodeExpires +resetCodeAttempts +resetCodeChannel +resetCodeLastSentAt"
     );
 
@@ -752,7 +760,7 @@ export const verifyResetCode = async (req, res) => {
     const method = isEmail(value) ? "email" : "phone";
     const clean = method === "email" ? value.toLowerCase() : value;
 
-    const user = await User.findOne({ [method]: clean }).select(
+    const user = await User.findOne({ [method]: clean, _bypassTenantGuard: true }).select(
       "+resetCode +resetCodeExpires +resetCodeAttempts"
     );
 
@@ -825,6 +833,7 @@ export const resetPasswordWithCode = async (req, res) => {
     const user = await User.findOne({
       resetToken: hashCode(resetToken),
       resetTokenExpires: { $gt: new Date() },
+      _bypassTenantGuard: true,
     }).select("+resetToken +resetTokenExpires");
 
     if (!user) {

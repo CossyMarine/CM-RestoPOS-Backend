@@ -1,4 +1,5 @@
 // controllers/accountantController.js
+import mongoose from "mongoose";
 import User from "../models/User.js";
 import Receipt from "../models/Receipt.js";
 import Shift from "../models/Shift.js";
@@ -17,10 +18,11 @@ const METHOD_BUCKET = (method) => {
 // @access  Protected — admin
 export const listAccountants = async (req, res) => {
   try {
-    const accountants = await User.find({ role: "accountant" }).select("-password");
+    const { businessId } = req;
+    const accountants = await User.find({ businessId, role: "accountant" }).select("-password");
     const results = await Promise.all(
       accountants.map(async (a) => {
-        const lastShift = await Shift.findOne({ openedBy: a._id }).sort({ createdAt: -1 });
+        const lastShift = await Shift.findOne({ businessId, openedBy: a._id }).sort({ createdAt: -1 });
         return {
           ...a.toObject(),
           lastShift: lastShift
@@ -41,9 +43,10 @@ export const listAccountants = async (req, res) => {
 export const getAccountantStats = async (req, res) => {
   const { id } = req.params;
   const { from, to } = req.query;
+  const { businessId } = req;
 
   try {
-    const accountant = await User.findById(id).select("-password");
+    const accountant = await User.findOne({ _id: id, businessId }).select("-password");
     if (!accountant || accountant.role !== "accountant") {
       return res.status(404).json({ message: "Accountant not found" });
     }
@@ -58,7 +61,7 @@ export const getAccountantStats = async (req, res) => {
     }
 
     const grouped = await Receipt.aggregate([
-      { $match: { "payments.paidBy": accountant._id } },
+      { $match: { businessId: new mongoose.Types.ObjectId(businessId), "payments.paidBy": accountant._id } },
       { $unwind: "$payments" },
       { $match: paymentMatch },
       { $group: { _id: "$payments.method", total: { $sum: "$payments.amount" }, count: { $sum: 1 } } },
@@ -71,7 +74,7 @@ export const getAccountantStats = async (req, res) => {
       totals[METHOD_BUCKET(g._id)] += g.total;
     });
 
-    const shiftQuery = { openedBy: accountant._id };
+    const shiftQuery = { businessId, openedBy: accountant._id };
     if (from || to) {
       shiftQuery.createdAt = {};
       if (from) shiftQuery.createdAt.$gte = getKenyanDayBounds(from).start;
@@ -97,6 +100,7 @@ export const getAccountantStats = async (req, res) => {
 export const updateAccountantPermissions = async (req, res) => {
   const { id } = req.params;
   const { permissions } = req.body;
+  const { businessId } = req;
 
   if (!permissions || typeof permissions !== "object") {
     return res.status(400).json({ message: "permissions object is required" });
@@ -109,7 +113,7 @@ const ALLOWED_KEYS = [
 ];
 
   try {
-    const accountant = await User.findById(id);
+    const accountant = await User.findOne({ _id: id, businessId });
     if (!accountant || accountant.role !== "accountant") {
       return res.status(404).json({ message: "Accountant not found" });
     }

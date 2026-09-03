@@ -4,23 +4,42 @@ import { cloudinary } from "../Config/cloudinary.js";
 import { redisService } from "../routes/services/redis.service.js";
 
 // @desc    Get all available menu items (pinned items always first)
-// @route   GET /api/menu
+// @route   GET /api/menu?businessId=<id>
 // @access  Public
+//
+// This route has NO auth middleware in front of it (see routes/menuRoutes.js),
+// so there is no req.businessId / req.scope here — the customer's device
+// (having scanned a table QR code, same as registerCustomer/checkAvailability)
+// must tell us which business's menu it wants via ?businessId=.
+//
+// NOTE: the cache key below is now namespaced per business. It previously
+// was a single global "menu:all" key — meaning whichever business's menu
+// got cached first would have been served to every other business's
+// customers until the cache expired. Flagging this in case a hardcoded
+// "menu:all" key is referenced anywhere else (e.g. cache invalidation on
+// item create/update/delete, all of which now also need the businessId
+// suffix — see redisService.del calls below).
 export const getMenu = async (req, res) => {
   try {
-    const cachedMenu = await redisService.get("menu:all");
+    const { businessId } = req.query;
+    if (!businessId) {
+      return res.status(400).json({ message: "Missing business — scan the table QR code again" });
+    }
+
+    const cacheKey = `menu:${businessId}`;
+    const cachedMenu = await redisService.get(cacheKey);
     if (cachedMenu) {
       return res.json(cachedMenu);
     }
 
-   const items = await req.scope(MenuItem).find({ isAvailable: true }).sort({
+    const items = await MenuItem.find({ isAvailable: true, businessId }).sort({
       pinned: -1,
       pinOrder: 1,
       category: 1,
       name: 1,
     });
 
-    await redisService.set("menu:all", items);
+    await redisService.set(cacheKey, items);
     return res.json(items);
   } catch (error) {
     console.error("Error fetching menu:", error.message);
@@ -53,6 +72,7 @@ export const uploadMenuImage = async (req, res) => {
 // @access  Protected — admin, manager, waiter, accountant
 export const createMenuItem = async (req, res) => {
   try {
+    const { businessId } = req;
     const { name, description, price, category, imageUrl, imagePublicId } = req.body;
 
     if (!name || !price) {
@@ -60,6 +80,7 @@ export const createMenuItem = async (req, res) => {
     }
 
     const item = await MenuItem.create({
+      businessId,
       name,
       description:   description || "",
       price,
@@ -68,7 +89,7 @@ export const createMenuItem = async (req, res) => {
       imagePublicId:  imagePublicId || null,
     });
 
-    await redisService.del("menu:all");
+    await redisService.del(`menu:${businessId}`);
     res.status(201).json(item);
   } catch (error) {
     console.error("Error creating menu item:", error.message);
@@ -82,6 +103,7 @@ export const createMenuItem = async (req, res) => {
 export const updateMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
+    const { businessId } = req;
     const allowed = [
       "name",
       "description",
@@ -96,7 +118,7 @@ export const updateMenuItem = async (req, res) => {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     });
 
-    const existing = await MenuItem.findById(id);
+    const existing = await MenuItem.findOne({ _id: id, businessId });
     if (!existing) {
       return res.status(404).json({ message: "Menu item not found" });
     }
@@ -109,13 +131,13 @@ export const updateMenuItem = async (req, res) => {
       await cloudinary.uploader.destroy(existing.imagePublicId).catch(() => {});
     }
 
-    const item = await MenuItem.findByIdAndUpdate(id, updates, {
+    const item = await MenuItem.findOneAndUpdate({ _id: id, businessId }, updates, {
       new: true,
       runValidators: true,
     });
 
     if (item) {
-      await redisService.del("menu:all");
+      await redisService.del(`menu:${businessId}`);
     }
     res.json(item);
   } catch (error) {
@@ -130,13 +152,14 @@ export const updateMenuItem = async (req, res) => {
 export const deleteMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const item = await MenuItem.findByIdAndDelete(id);
+    const { businessId } = req;
+    const item = await MenuItem.findOneAndDelete({ _id: id, businessId });
 
     if (!item) {
       return res.status(404).json({ message: "Menu item not found" });
     }
 
-    await redisService.del("menu:all");
+    await redisService.del(`menu:${businessId}`);
 
     if (item.imagePublicId) {
       await cloudinary.uploader.destroy(item.imagePublicId).catch(() => {});
@@ -156,12 +179,13 @@ export const togglePinMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
     const { pinned } = req.body;
+    const { businessId } = req;
 
-    const item = await MenuItem.findById(id);
+    const item = await MenuItem.findOne({ _id: id, businessId });
     if (!item) return res.status(404).json({ message: "Menu item not found" });
 
     if (pinned) {
-      const highestPinned = await MenuItem.findOne({ pinned: true }).sort({ pinOrder: -1 });
+      const highestPinned = await MenuItem.findOne({ businessId, pinned: true }).sort({ pinOrder: -1 });
       item.pinOrder = highestPinned ? highestPinned.pinOrder + 1 : 0;
       item.pinned = true;
     } else {
@@ -170,7 +194,7 @@ export const togglePinMenuItem = async (req, res) => {
     }
 
     await item.save();
-    await redisService.del("menu:all");
+    await redisService.del(`menu:${businessId}`);
     res.json(item);
   } catch (error) {
     console.error("Error toggling pin:", error.message);
@@ -183,26 +207,30 @@ export const togglePinMenuItem = async (req, res) => {
 // @access  Protected — admin, manager, waiter, accountant
 export const reorderPinnedMenu = async (req, res) => {
   try {
+    const { businessId } = req;
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
       return res.status(400).json({ message: "orderedIds array is required" });
     }
 
+    // bulkWrite isn't covered by TenantGuard at all (it's not in the plugin's
+    // guardedOps list), so businessId has to go in each op's filter by hand —
+    // there's no guard here to catch a missing one.
     const ops = orderedIds.map((id, index) => ({
       updateOne: {
-        filter: { _id: id, pinned: true },
+        filter: { _id: id, pinned: true, businessId },
         update: { $set: { pinOrder: index } },
       },
     }));
     await MenuItem.bulkWrite(ops);
 
-    const items = await MenuItem.find({ isAvailable: true }).sort({
+    const items = await MenuItem.find({ isAvailable: true, businessId }).sort({
       pinned: -1,
       pinOrder: 1,
       category: 1,
       name: 1,
     });
-    await redisService.del("menu:all");
+    await redisService.del(`menu:${businessId}`);
     res.json(items);
   } catch (error) {
     console.error("Error reordering pinned menu:", error.message);

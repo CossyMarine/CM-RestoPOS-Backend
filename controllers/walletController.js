@@ -6,9 +6,9 @@ import AdminSettings from "../models/AdminSettings.js";
 import { stkPush } from "../utils/mpesa.js";
 import { applyPaymentToReceipt, applyRewardRedemption , findCustomerByIdentifier} from "../utils/walletPayments.js";
 
-const attachMenuImages = async (items) => {
+const attachMenuImages = async (items, businessId) => {
   const names = items.map((i) => i.mealName);
-  const menuItems = await MenuItem.find({ name: { $in: names } }).select("name imageUrl");
+  const menuItems = await MenuItem.find({ name: { $in: names }, businessId }).select("name imageUrl");
   const imageByName = Object.fromEntries(menuItems.map((m) => [m.name.toLowerCase(), m.imageUrl]));
   return items.map((i) => ({
     mealName: i.mealName,
@@ -24,8 +24,10 @@ const attachMenuImages = async (items) => {
 // @access  Protected
 export const getMyWallet = async (req, res) => {
   try {
-    const settings = await AdminSettings.getSettings();
+    const { businessId } = req;
+    const settings = await AdminSettings.getSettings(businessId);
     const bills = await Receipt.find({
+      businessId,
       customer: req.user._id,
       status: { $in: ["unpaid", "partial"] },
     }).sort({ createdAt: -1 });
@@ -73,11 +75,12 @@ export const resolveBill = async (req, res) => {
   }
 
   try {
+    const { businessId } = req;
     let targetUserId = req.user._id;
     let customerName = req.user.fullName;
 
     if (identifier) {
-      const owner = await findCustomerByIdentifier(identifier);
+      const owner = await findCustomerByIdentifier(identifier, businessId);
       if (!owner) {
         return res.status(404).json({ message: "No registered customer found with that email or phone" });
       }
@@ -86,6 +89,7 @@ export const resolveBill = async (req, res) => {
     }
 
     const receipt = await Receipt.findOne({
+      businessId,
       billId,
       customer: targetUserId,
       status: { $in: ["unpaid", "partial"] },
@@ -94,7 +98,7 @@ export const resolveBill = async (req, res) => {
       return res.status(404).json({ message: "No payable bill found with that Bill ID for this customer" });
     }
 
-    const items = await attachMenuImages(receipt.items);
+    const items = await attachMenuImages(receipt.items, businessId);
    const owed = receipt.totalDue ?? receipt.subtotal;
    const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
     res.json({
@@ -143,7 +147,8 @@ export const payWithManualTill = async (req, res) => {
   }
 
   try {
-    const receipt = await Receipt.findById(receiptId);
+    const { businessId } = req;
+    const receipt = await Receipt.findOne({ _id: receiptId, businessId });
     if (!receipt) return res.status(404).json({ message: "Bill not found" });
     if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "This bill is already settled" });
@@ -202,7 +207,8 @@ export const payWithStk = async (req, res) => {
   }
 
   try {
-    const receipt = await Receipt.findById(receiptId);
+    const { businessId } = req;
+    const receipt = await Receipt.findOne({ _id: receiptId, businessId });
     if (!receipt) return res.status(404).json({ message: "Bill not found" });
     if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "This bill is already settled" });
@@ -259,7 +265,8 @@ export const payWithStk = async (req, res) => {
 // @access  Protected
 export const getWalletStkStatus = async (req, res) => {
   try {
-    const receipt = await Receipt.findById(req.params.receiptId);
+    const { businessId } = req;
+    const receipt = await Receipt.findOne({ _id: req.params.receiptId, businessId });
     if (!receipt) return res.status(404).json({ message: "Bill not found" });
 
     const settled = ["paid", "partial"].includes(receipt.status) && receipt.mpesaStatus === "success";
@@ -281,10 +288,11 @@ export const payWithReward = async (req, res) => {
   if (!receiptId) return res.status(400).json({ message: "Bill is required" });
 
   try {
-    const settings = await AdminSettings.getSettings();
+    const { businessId } = req;
+    const settings = await AdminSettings.getSettings(businessId);
     if (!settings.reward.enabled) return res.status(400).json({ message: "Rewards are not enabled" });
 
-    const receipt = await Receipt.findById(receiptId);
+    const receipt = await Receipt.findOne({ _id: receiptId, businessId });
     if (!receipt) return res.status(404).json({ message: "Bill not found" });
     if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "This bill is already settled" });
@@ -328,12 +336,13 @@ export const adminAddReward = async (req, res) => {
   }
 
   try {
-    const customer = await findCustomerByIdentifier(identifier);
+    const { businessId } = req;
+    const customer = await findCustomerByIdentifier(identifier, businessId);
     if (!customer) {
       return res.status(404).json({ message: "No registered customer found with that email or phone" });
     }
 
-    const settings = await AdminSettings.getSettings();
+    const settings = await AdminSettings.getSettings(businessId);
     if (!settings.reward.enabled) return res.status(400).json({ message: "Rewards are not enabled" });
 
     const pointValue = settings.reward.pointValueKes || 1;
@@ -341,10 +350,11 @@ export const adminAddReward = async (req, res) => {
     const points = Math.floor(kesEarned / pointValue);
     if (points <= 0) return res.status(400).json({ message: "Amount too small to earn a reward point" });
 
-    await User.findByIdAndUpdate(customer._id, { $inc: { walletPoints: points } });
+    await User.findOneAndUpdate({ _id: customer._id, businessId }, { $inc: { walletPoints: points } });
 
     const RewardTransaction = (await import("../models/RewardTransaction.js")).default;
     await RewardTransaction.create({
+      businessId,
       user: customer._id,
       type: "earn",
       points,
@@ -375,12 +385,13 @@ export const adminPayWithReward = async (req, res) => {
   }
 
   try {
-    const customer = await findCustomerByIdentifier(identifier);
+    const { businessId } = req;
+    const customer = await findCustomerByIdentifier(identifier, businessId);
     if (!customer) {
       return res.status(404).json({ message: "No registered customer found with that email or phone" });
     }
 
-    const receipt = await Receipt.findById(receiptId);
+    const receipt = await Receipt.findOne({ _id: receiptId, businessId });
     if (!receipt) return res.status(404).json({ message: "Bill not found" });
     if (!["unpaid", "partial"].includes(receipt.status)) {
       return res.status(400).json({ message: "This bill is already settled" });
