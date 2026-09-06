@@ -238,3 +238,21 @@ export const reorderPinnedMenu = async (req, res) => {
     res.status(500).json({ message: "Failed to reorder pinned items" });
   }
 };
+// @desc    Get all menu items for the admin dashboard (includes unavailable items)
+// @route   GET /api/menu/admin
+// @access  Protected — admin, manager, waiter, accountant
+export const getMenuForAdmin = async (req, res) => {
+  try {
+    const { businessId } = req;
+    const items = await MenuItem.find({ businessId }).sort({
+      pinned: -1,
+      pinOrder: 1,
+      category: 1,
+      name: 1,
+    });
+    res.json(items);
+  } catch (error) {
+    console.error("Error fetching admin menu:", error.message);
+    res.status(500).json({ message: "Failed to fetch menu" });
+  }
+};

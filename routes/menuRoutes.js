@@ -20,5 +20,6 @@ router.patch("/:id/pin", protect, staffRoles, menuGate, togglePinMenuItem);
 router.post("/", protect, staffRoles, menuGate, createMenuItem);
 router.put("/:id", protect, staffRoles, menuGate, updateMenuItem);
 router.delete("/:id", protect, staffRoles, menuGate, deleteMenuItem);
+router.get("/admin", protect, staffRoles, getMenuForAdmin);
 
 export default router;
