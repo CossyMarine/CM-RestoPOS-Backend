@@ -33,15 +33,24 @@ req.user = user;
 req.businessId = user.businessId;
 req.scope = (Model) => scopeModel(Model, req.businessId);
 
-    if (req.businessId && req.user.role !== "superadmin" && !req.user.isAdmin) {
-      const business = await Business.findOne({ _id: req.businessId, _bypassTenantGuard: true }).select("status");
-      if (business?.status === "suspended") {
-        return res.status(403).json({
-          message: "POS not available now",
-          businessSuspended: true,
-        });
-      }
-    }
+    const EXEMPT_WHEN_SUSPENDED = ["/api/auth/me", "/api/auth/logout"];
+
+if (
+  req.businessId &&
+  req.user.role !== "superadmin" &&
+  !EXEMPT_WHEN_SUSPENDED.includes(req.originalUrl.split("?")[0])
+) {
+  const business = await Business.findOne({ _id: req.businessId, _bypassTenantGuard: true }).select("status");
+  if (business?.status === "suspended") {
+    return res.status(403).json({
+      message: req.user.isAdmin
+        ? "POS suspended — you have to pay to continue"
+        : "POS not available now",
+      businessSuspended: true,
+      isAdmin: req.user.isAdmin,
+    });
+  }
+}
 next();
   } catch (error) {
     console.error("Auth middleware error:", error.message);
