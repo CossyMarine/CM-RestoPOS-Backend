@@ -24,6 +24,9 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 import accountantRoutes from "./routes/accountantRoutes.js";
 import reportsRoutes from "./routes/reportsRoutes.js";
 import superAdminRoutes from "./routes/superAdminRoutes.js";
+import paymentConfigRoutes from "./routes/paymentConfigRoutes.js";
+import mpesaRoutes from "./routes/mpesaRoutes.js";
+
 dotenv.config();
 
 /* =================================================
@@ -111,4 +114,6 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/accountants", accountantRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/superadmin", superAdminRoutes);
+app.use("/api/payment-config", paymentConfigRoutes);
+app.use("/api/mpesa", mpesaRoutes);
 export default app;
