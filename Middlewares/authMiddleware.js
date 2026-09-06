@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Shift from "../models/Shift.js";
 import { scopeModel } from "../utils/scopedModel.js";
+import Business from "../models/Business.js";
 // Protect routes — reads the httpOnly cookie set on login
 export const protect = async (req, res, next) => {
   const token = req.cookies?.token;
@@ -31,6 +32,16 @@ if (!user.isActive) {
 req.user = user;
 req.businessId = user.businessId;
 req.scope = (Model) => scopeModel(Model, req.businessId);
+
+    if (req.businessId && req.user.role !== "superadmin" && !req.user.isAdmin) {
+      const business = await Business.findOne({ _id: req.businessId, _bypassTenantGuard: true }).select("status");
+      if (business?.status === "suspended") {
+        return res.status(403).json({
+          message: "POS not available now",
+          businessSuspended: true,
+        });
+      }
+    }
 next();
   } catch (error) {
     console.error("Auth middleware error:", error.message);

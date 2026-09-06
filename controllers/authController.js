@@ -6,6 +6,7 @@ import crypto from "crypto";
 import sendResetEmail from "../utils/sendResetEmail.js";
 import { sendResetCode } from "../utils/sendResetSms.js";
 import { validatePassword } from "../utils/validatePassword.js";
+import Business from "../models/Business.js";
 // ======================= HELPERS =======================
 
 const generateToken = (user) => {
@@ -108,9 +109,13 @@ export const logout = async (req, res) => {
 // @route   GET /api/auth/me
 // @access  Protected
 export const getMe = async (req, res) => {
-  res.json({ user: publicUser(req.user) });
+  const userData = publicUser(req.user);
+  if (req.businessId) {
+    const business = await Business.findOne({ _id: req.businessId, _bypassTenantGuard: true }).select("status");
+    userData.businessStatus = business?.status || null;
+  }
+  res.json({ user: userData });
 };
-
 // @desc    Check if an email/phone is already taken
 // @route   GET /api/auth/check-availability?field=email&value=jane@mail.com
 // @access  Public
