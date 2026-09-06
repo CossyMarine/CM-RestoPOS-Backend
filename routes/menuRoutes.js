@@ -2,7 +2,7 @@
 import express from "express";
 import {
   getMenu, createMenuItem, updateMenuItem, deleteMenuItem,
-  uploadMenuImage, togglePinMenuItem, reorderPinnedMenu,
+  uploadMenuImage, togglePinMenuItem, reorderPinnedMenu,getMenuForAdmin
 } from "../controllers/menuController.js";
 import { protect, authorize, requirePermission } from "../Middlewares/authMiddleware.js";
 import { uploadMenuImage as uploadMenuImageMiddleware } from "../Config/cloudinary.js";
