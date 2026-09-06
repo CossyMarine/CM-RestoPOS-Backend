@@ -37,7 +37,7 @@ export const createBusiness = async (req, res) => {
 // @route   GET /api/superadmin/businesses
 export const listBusinesses = async (req, res) => {
   try {
-    const businesses = await Business.find({}).sort({ createdAt: -1 });
+    const businesses = await Business.find({ _bypassTenantGuard: true }).sort({ createdAt: -1 });
     res.json({ businesses });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
@@ -141,12 +141,11 @@ export const configureBusinessSettings = async (req, res) => {
 export const getPlatformOverview = async (req, res) => {
   try {
     const [total, active, suspended, trialing] = await Promise.all([
-      Business.countDocuments({}),
-      Business.countDocuments({ status: "active" }),
-      Business.countDocuments({ status: "suspended" }),
-      Business.countDocuments({ subscriptionStatus: "trialing" }),
+      Business.countDocuments({ _bypassTenantGuard: true }),
+      Business.countDocuments({ status: "active", _bypassTenantGuard: true }),
+      Business.countDocuments({ status: "suspended", _bypassTenantGuard: true }),
+      Business.countDocuments({ subscriptionStatus: "trialing", _bypassTenantGuard: true }),
     ]);
-
     res.json({ totalBusinesses: total, active, suspended, trialing });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
