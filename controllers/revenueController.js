@@ -3,10 +3,7 @@ import mongoose from "mongoose";
 import Receipt from "../models/Receipt.js";
 import { getKenyanDayBounds, getDateRangePreset } from "../utils/dateHelpers.js";
 import { redisService } from "../routes/services/redis.service.js";
-import { resolvePublicBusinessId } from "../utils/resolvePublicBusinessId.js";
-
 const REDIS_TTL_SECONDS = 30;
-
 // @desc    Get total revenue and paid receipt count for today
 // @route   GET /api/revenue/today?businessId=<id>
 // @access  Public
@@ -18,12 +15,12 @@ const REDIS_TTL_SECONDS = 30;
 // confirming with product/frontend what's actually meant to call this —
 // "today's revenue" being public at all, even scoped, may be worth a second
 // look.
+// @desc    Get today's revenue — Dashboard Overview cards
+// @route   GET /api/revenue/today
+// @access  Protected — admin, accountant
 export const getTodayRevenue = async (req, res) => {
   try {
-    const businessId = await resolvePublicBusinessId(req);
-    if (!businessId) {
-      return res.status(400).json({ message: "Missing businessId" });
-    }
+    const { businessId } = req;
 
     const { start: startOfDay, end: endOfDay } = getKenyanDayBounds();
 
@@ -55,7 +52,6 @@ export const getTodayRevenue = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch revenue data", error: error.message });
   }
 };
-
 // @desc    Get all-time total revenue and total receipt count — Dashboard Overview cards
 // @route   GET /api/revenue/summary
 // @access  Protected — admin

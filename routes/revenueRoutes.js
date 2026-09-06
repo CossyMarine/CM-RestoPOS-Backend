@@ -11,10 +11,10 @@ import { protect, authorize } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-router.get("/today", getTodayRevenue);
-router.get("/summary", protect, authorize("admin"), getRevenueSummary);
-router.get("/trend", protect, authorize("admin"), getRevenueTrend);
-router.get("/weekly", protect, authorize("admin"), getWeeklyPerformance);
-router.get("/top-meals", protect, authorize("admin"), getTopMeals);
+router.get("/today", protect, authorize("admin", "accountant"), getTodayRevenue);
+router.get("/summary", protect, authorize("admin", "accountant"), getRevenueSummary);
+router.get("/trend", protect, authorize("admin", "accountant"), getRevenueTrend);
+router.get("/weekly", protect, authorize("admin", "accountant"), getWeeklyPerformance);
+router.get("/top-meals", protect, authorize("admin", "accountant"), getTopMeals);
 
 export default router;
