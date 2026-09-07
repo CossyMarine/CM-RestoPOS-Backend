@@ -115,5 +115,4 @@ app.use("/api/accountants", accountantRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/payment-config", paymentConfigRoutes);
-app.use("/api/mpesa", mpesaRoutes);
 export default app;

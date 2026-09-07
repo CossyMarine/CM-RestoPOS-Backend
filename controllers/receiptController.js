@@ -2,6 +2,7 @@
 import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
 import AdminSettings from "../models/AdminSettings.js";
+import PaymentConfig from "../models/PaymentConfig.js";
 import { stkPush, stkQuery } from "../utils/mpesa.js";
 import {
   applyPaymentToReceipt,
@@ -26,7 +27,31 @@ export { addItemsToReceipt, markReceiptPrinted, applyDiscount } from "./receipt/
 // ============================================================
 // CASH PAYMENT
 // ============================================================
+// Loads and decrypts this business's M-Pesa config, or throws a
+// user-facing error if it's missing/disabled — keeps both call sites
+// below from duplicating this logic.
+async function loadMpesaCredentials(req) {
+  const config = await req
+    .scope(PaymentConfig)
+    .findOne({ provider: "mpesa" })
+    .select("+consumerKey +consumerSecret +passkey");
 
+  if (!config || !config.enabled) {
+    const err = new Error("M-Pesa isn't configured for this business yet");
+    err.status = 400;
+    throw err;
+  }
+
+  const { consumerKey, consumerSecret, passkey } = config.getDecryptedCredentials();
+  return {
+    shortcode: config.shortcode,
+    consumerKey,
+    consumerSecret,
+    passkey,
+    environment: config.environment,
+    callbackUrl: `${process.env.MPESA_CALLBACK_BASE_URL}/api/receipts/mpesa/callback`,
+  };
+}
 // @desc    Pay a receipt with cash. Change is never allowed to be negative.
 // @route   PATCH /api/receipts/:id/pay
 // @access  Protected — admin
@@ -209,8 +234,6 @@ export const initiateMpesaPayment = async (req, res) => {
     if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
-    // A prompt is already out for this bill — don't send a second one.
-    // Tell the cashier what's already pending instead of firing again.
     if (receipt.mpesaStatus === "pending" && receipt.mpesaCheckoutRequestId) {
       return res.status(409).json({
         message: `A payment prompt was already sent to ${receipt.mpesaPhone} for this bill and is still waiting on the customer.`,
@@ -223,8 +246,8 @@ export const initiateMpesaPayment = async (req, res) => {
       return res.status(400).json({ message: "M-Pesa phone number is required" });
     }
 
-   const owed = receipt.totalDue ?? receipt.subtotal;
-const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
+    const owed = receipt.totalDue ?? receipt.subtotal;
+    const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
     cashAmount = parseFloat(cashAmount) || 0;
     if (cashAmount < 0) {
       return res.status(400).json({ message: "Cash amount cannot be negative" });
@@ -237,11 +260,15 @@ const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
 
     const tillAmount = Number((balanceDue - cashAmount).toFixed(2));
 
+    // NEW — load this business's own M-Pesa credentials instead of global env vars
+    const credentials = await loadMpesaCredentials(req);
+
     const stkRes = await stkPush({
       phone,
       amount: tillAmount,
       accountRef: receipt.billId,
       description: `Bill ${receipt.billId}`,
+      ...credentials,
     });
 
     if (String(stkRes.ResponseCode) !== "0") {
@@ -272,7 +299,7 @@ const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
     });
   } catch (error) {
     console.error("Error initiating M-Pesa payment:", error.response?.data || error.message);
-    res.status(500).json({
+    res.status(error.status || 500).json({
       message:
         error.response?.data?.errorMessage ||
         error.message ||
@@ -280,7 +307,6 @@ const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
     });
   }
 };
-
 // @desc    Daraja calls this once the customer responds to the STK prompt
 // @route   POST /api/receipts/mpesa/callback
 // @access  Public (Safaricom webhook)
@@ -346,7 +372,9 @@ export const getMpesaStatus = async (req, res) => {
     const io = req.app.get("io");
 
     try {
-      const queryRes = await stkQuery(receipt.mpesaCheckoutRequestId);
+      // NEW — load this business's own credentials for the query too
+      const credentials = await loadMpesaCredentials(req);
+      const queryRes = await stkQuery({ checkoutRequestId: receipt.mpesaCheckoutRequestId, ...credentials });
       const resultCode = Number(queryRes.ResultCode);
 
       if (resultCode === 0) {

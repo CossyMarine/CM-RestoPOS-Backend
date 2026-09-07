@@ -1,35 +1,41 @@
 // utils/mpesa.js
 // Minimal Daraja (M-Pesa) STK Push client — access token, STK push, STK query.
+// Credentials are passed in per-call, never read from process.env directly —
+// each business supplies its own via PaymentConfig, since M-Pesa is
+// per-tenant, not platform-wide.
 import axios from "axios";
 
-const isProd = (process.env.MPESA_ENV || "sandbox") === "production";
-const BASE_URL = isProd
-  ? "https://api.safaricom.co.ke"
-  : "https://sandbox.safaricom.co.ke";
+const BASE_URLS = {
+  sandbox: "https://sandbox.safaricom.co.ke",
+  production: "https://api.safaricom.co.ke",
+};
 
-let cachedToken = null;
-let cachedTokenExpiry = 0;
+// Token cache keyed by consumerKey — each business's token is cached
+// independently, since each business has its own Daraja app credentials.
+const tokenCache = new Map(); // consumerKey -> { token, expiry }
 
-export const getAccessToken = async () => {
-  if (cachedToken && Date.now() < cachedTokenExpiry) return cachedToken;
+export const getAccessToken = async ({ consumerKey, consumerSecret, environment }) => {
+  const cached = tokenCache.get(consumerKey);
+  if (cached && Date.now() < cached.expiry) return cached.token;
 
-  const key = process.env.MPESA_CONSUMER_KEY;
-  const secret = process.env.MPESA_CONSUMER_SECRET;
-
-  if (!key || !secret) {
-    throw new Error("MPESA_CONSUMER_KEY / MPESA_CONSUMER_SECRET not configured");
+  if (!consumerKey || !consumerSecret) {
+    throw new Error("M-Pesa consumer key/secret not configured for this business");
   }
 
-  const auth = Buffer.from(`${key}:${secret}`).toString("base64");
+  const BASE_URL = BASE_URLS[environment] || BASE_URLS.sandbox;
+  const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
 
   const { data } = await axios.get(
     `${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
     { headers: { Authorization: `Basic ${auth}` } }
   );
 
-  cachedToken = data.access_token;
-  cachedTokenExpiry = Date.now() + (Number(data.expires_in || 3599) - 60) * 1000;
-  return cachedToken;
+  tokenCache.set(consumerKey, {
+    token: data.access_token,
+    expiry: Date.now() + (Number(data.expires_in || 3599) - 60) * 1000,
+  });
+
+  return data.access_token;
 };
 
 const timestamp = () => {
@@ -45,11 +51,8 @@ const timestamp = () => {
   );
 };
 
-const buildPassword = (ts) => {
-  const shortcode = process.env.MPESA_SHORTCODE;
-  const passkey = process.env.MPESA_PASSKEY;
-  return Buffer.from(`${shortcode}${passkey}${ts}`).toString("base64");
-};
+const buildPassword = (shortcode, passkey, ts) =>
+  Buffer.from(`${shortcode}${passkey}${ts}`).toString("base64");
 
 // Normalizes 07xx / 01xx / +2547xx / 2547xx -> 2547xxxxxxxx
 export const formatMpesaPhone = (phone) => {
@@ -61,22 +64,34 @@ export const formatMpesaPhone = (phone) => {
   throw new Error("Enter a valid Safaricom M-Pesa number, e.g. 0712345678");
 };
 
-export const stkPush = async ({ phone, amount, accountRef, description }) => {
-  const token = await getAccessToken();
+export const stkPush = async ({
+  phone,
+  amount,
+  accountRef,
+  description,
+  shortcode,
+  consumerKey,
+  consumerSecret,
+  passkey,
+  environment,
+  callbackUrl,
+  transactionType,
+}) => {
+  const token = await getAccessToken({ consumerKey, consumerSecret, environment });
   const ts = timestamp();
-  const shortcode = process.env.MPESA_SHORTCODE;
   const formattedPhone = formatMpesaPhone(phone);
+  const BASE_URL = BASE_URLS[environment] || BASE_URLS.sandbox;
 
   const payload = {
     BusinessShortCode: shortcode,
-    Password: buildPassword(ts),
+    Password: buildPassword(shortcode, passkey, ts),
     Timestamp: ts,
-    TransactionType: process.env.MPESA_TRANSACTION_TYPE || "CustomerBuyGoodsOnline",
+    TransactionType: transactionType || "CustomerBuyGoodsOnline",
     Amount: Math.max(1, Math.ceil(amount)),
     PartyA: formattedPhone,
     PartyB: shortcode,
     PhoneNumber: formattedPhone,
-    CallBackURL: process.env.MPESA_CALLBACK_URL,
+    CallBackURL: callbackUrl,
     AccountReference: (accountRef || "RestoPOS").slice(0, 12),
     TransactionDesc: (description || "Bill payment").slice(0, 13),
   };
@@ -90,14 +105,14 @@ export const stkPush = async ({ phone, amount, accountRef, description }) => {
   return data; // { MerchantRequestID, CheckoutRequestID, ResponseCode, ResponseDescription, ... }
 };
 
-export const stkQuery = async (checkoutRequestId) => {
-  const token = await getAccessToken();
+export const stkQuery = async ({ checkoutRequestId, shortcode, consumerKey, consumerSecret, passkey, environment }) => {
+  const token = await getAccessToken({ consumerKey, consumerSecret, environment });
   const ts = timestamp();
-  const shortcode = process.env.MPESA_SHORTCODE;
+  const BASE_URL = BASE_URLS[environment] || BASE_URLS.sandbox;
 
   const payload = {
     BusinessShortCode: shortcode,
-    Password: buildPassword(ts),
+    Password: buildPassword(shortcode, passkey, ts),
     Timestamp: ts,
     CheckoutRequestID: checkoutRequestId,
   };
