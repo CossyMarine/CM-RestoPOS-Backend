@@ -25,8 +25,6 @@ import accountantRoutes from "./routes/accountantRoutes.js";
 import reportsRoutes from "./routes/reportsRoutes.js";
 import superAdminRoutes from "./routes/superAdminRoutes.js";
 import paymentConfigRoutes from "./routes/paymentConfigRoutes.js";
-import mpesaRoutes from "./routes/mpesaRoutes.js";
-
 dotenv.config();
 
 /* =================================================
