@@ -103,6 +103,7 @@ router.post(
     requirePermission("payments"),
     cancelMpesaPayment
 );
+router.post("/mpesa/reconcile", protect, authorize("admin"), reconcilePendingMpesaPayments);
 
 router.patch(
     "/:id/discount",

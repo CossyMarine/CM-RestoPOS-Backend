@@ -125,3 +125,21 @@ export const stkQuery = async ({ checkoutRequestId, shortcode, consumerKey, cons
 
   return data; // { ResultCode, ResultDesc, ... }
 };
+async function withRetry(fn, { retries = 2, baseDelayMs = 500 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = err.response?.status;
+      // Only retry network failures or 5xx — never 4xx, since that means
+      // Daraja understood and rejected the request for a reason a retry
+      // won't fix (bad credentials, bad shortcode, etc.)
+      const retryable = !err.response || status >= 500;
+      if (!retryable || attempt === retries) break;
+      await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+    }
+  }
+  throw lastErr;
+}

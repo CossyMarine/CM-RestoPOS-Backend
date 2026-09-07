@@ -4,7 +4,7 @@ import app from "./app.js";
 import http from "http";
 import { Server } from "socket.io";
 import { seedDefaultInventoryLocations } from "./models/InventoryLocation.js";
-
+import { sweepStalePendingMpesaPayments } from "./controllers/receiptController.js";
 dotenv.config();
 
 /* ========================================
@@ -68,3 +68,8 @@ io.on("connection", (socket) => {
 server.listen(PORT, () =>
   console.log(`🚀 Server running on port ${PORT}`)
 );
+setInterval(() => {
+  sweepStalePendingMpesaPayments(io).catch((err) =>
+    console.error("M-Pesa sweep failed:", err.message)
+  );
+}, 60 * 1000);
