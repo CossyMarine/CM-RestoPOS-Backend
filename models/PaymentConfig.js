@@ -35,6 +35,18 @@ const paymentConfigSchema = new mongoose.Schema(
     },
 
     enabled: { type: Boolean, default: false },
+    shortcode: { type: String, trim: true, required: true },
+
+// Determines the Daraja TransactionType sent on every STK Push for this
+// business. "till" = CustomerBuyGoodsOnline (Buy Goods shortcode).
+// "paybill" = CustomerPayBillOnline (Paybill shortcode). These are not
+// interchangeable — Daraja rejects the wrong one outright.
+shortcodeType: {
+  type: String,
+  enum: ["till", "paybill"],
+  required: true,
+  default: "till",
+},
   },
   { timestamps: true }
 );
@@ -79,12 +91,13 @@ paymentConfigSchema.methods.getDecryptedCredentials = function () {
 paymentConfigSchema.statics.upsertForBusiness = async function (
   businessId,
   provider,
-  { shortcode, consumerKey, consumerSecret, passkey, environment, enabled }
+  { shortcode, shortcodeType, consumerKey, consumerSecret, passkey, environment, enabled }
 ) {
   const update = {
     businessId,
     provider,
     ...(shortcode !== undefined && { shortcode }),
+    ...(shortcodeType !== undefined && { shortcodeType }),
     ...(consumerKey !== undefined && { consumerKey: encrypt(consumerKey) }),
     ...(consumerSecret !== undefined && { consumerSecret: encrypt(consumerSecret) }),
     ...(passkey !== undefined && { passkey: encrypt(passkey) }),

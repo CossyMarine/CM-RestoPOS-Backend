@@ -17,10 +17,15 @@ export const getPaymentConfig = async (req, res) => {
 // @route   PUT /api/payment-config/:provider
 export const setPaymentConfig = async (req, res) => {
   try {
-    const { shortcode, consumerKey, consumerSecret, passkey, environment, enabled } = req.body;
+    const { shortcode, shortcodeType, consumerKey, consumerSecret, passkey, environment, enabled } = req.body;
+
+    if (shortcodeType && !["till", "paybill"].includes(shortcodeType)) {
+      return res.status(400).json({ message: "shortcodeType must be 'till' or 'paybill'" });
+    }
 
     const config = await PaymentConfig.upsertForBusiness(req.businessId, req.params.provider, {
       shortcode,
+      shortcodeType,
       consumerKey,
       consumerSecret,
       passkey,

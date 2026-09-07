@@ -49,6 +49,7 @@ async function loadMpesaCredentials(req) {
     consumerSecret,
     passkey,
     environment: config.environment,
+    transactionType: config.shortcodeType === "paybill" ? "CustomerPayBillOnline" : "CustomerBuyGoodsOnline",
     callbackUrl: `${process.env.MPESA_CALLBACK_BASE_URL}/api/receipts/mpesa/callback`,
   };
 }
