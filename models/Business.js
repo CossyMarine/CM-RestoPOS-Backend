@@ -1,6 +1,6 @@
 // models/Business.js
 import mongoose from "mongoose";
-import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
+
 const businessSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -43,6 +43,5 @@ const businessSchema = new mongoose.Schema(
   },
   { timestamps: true } // gives you createdAt + updatedAt for free
 );
-businessSchema.plugin(tenantGuard);
 
 export default mongoose.model("Business", businessSchema);
