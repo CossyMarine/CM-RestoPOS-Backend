@@ -21,7 +21,7 @@ import {
     addItemsToReceipt,
     markReceiptPrinted,
     getPendingOnlineReceipts,
-    applyDiscount,
+    applyDiscount,reconcilePendingMpesaPayments
 } from "../controllers/receiptController.js";
 
 import {
