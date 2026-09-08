@@ -60,4 +60,6 @@ orderSchema.index(
   { unique: true, partialFilterExpression: { clientRequestId: { $type: "string" } } }
 );
 orderSchema.plugin(tenantGuard);
+export default mongoose.model("Order", orderSchema);
+
 export { orderItemSchema };
