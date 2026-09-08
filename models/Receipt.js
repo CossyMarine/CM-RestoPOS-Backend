@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { orderItemSchema } from "./Order.js";
 import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
 import { queueEtimsSubmission } from "../jobs/etimsJob.js";
+
 // One entry per payment towards a bill — supports partial payments,
 // multiple methods on the same bill, and a full audit trail.
 const paymentEntrySchema = new mongoose.Schema(
@@ -22,7 +23,6 @@ const paymentEntrySchema = new mongoose.Schema(
       ],
       required: true,
     },
-    // M-Pesa code, payer's full name (manual till), or a reward note
     reference: { type: String, default: null },
     paidBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -69,7 +69,6 @@ const receiptSchema = new mongoose.Schema(
       default: null,
     },
 
-    // NEW: Indicates where the order originated
     source: {
       type: String,
       enum: ["staff", "online"],
@@ -85,8 +84,8 @@ const receiptSchema = new mongoose.Schema(
     discount: {
       type: {
         kind: { type: String, enum: ["percent", "fixed", null], default: null },
-        value: { type: Number, default: 0 },   // 10 (%) or 200 (KES) — whatever was entered
-        amount: { type: Number, default: 0 },  // the actual KES amount deducted, always stored regardless of kind
+        value: { type: Number, default: 0 },
+        amount: { type: Number, default: 0 },
         reason: { type: String, default: null },
         appliedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
       },
@@ -95,18 +94,15 @@ const receiptSchema = new mongoose.Schema(
 
     tax: {
       type: {
-        ratePercent: { type: Number, default: 0 }, // snapshot of the rate AT THE TIME this bill was made
+        ratePercent: { type: Number, default: 0 },
         inclusive: { type: Boolean, default: true },
-        amount: { type: Number, default: 0 },      // KES value of tax within/added to this bill
+        amount: { type: Number, default: 0 },
       },
       default: () => ({}),
     },
 
-    // The actual amount owed after discount + tax — this is what payments
-    // should be measured against. `subtotal` keeps its original meaning
-    // (raw sum of item lines) for reporting continuity.
     totalDue: { type: Number, default: null },
-    // The registered customer this bill belongs to (null for walk-in/guest bills)
+
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -119,8 +115,6 @@ const receiptSchema = new mongoose.Schema(
       default: "unpaid",
     },
 
-    // "both" = split cash + till payment. Reflects the most recent/primary
-    // method — full breakdown lives in `payments`.
     paymentMethod: {
       type: String,
       enum: [
@@ -137,7 +131,6 @@ const receiptSchema = new mongoose.Schema(
       default: null,
     },
 
-    // Running total received across all payments
     amountPaid: {
       type: Number,
       default: null,
@@ -148,7 +141,6 @@ const receiptSchema = new mongoose.Schema(
       default: null,
     },
 
-    // Split breakdown for the classic staff cash/till flow
     cashAmount: {
       type: Number,
       default: 0,
@@ -159,10 +151,8 @@ const receiptSchema = new mongoose.Schema(
       default: 0,
     },
 
-    // Full payment history
     payments: [paymentEntrySchema],
 
-    // ---- Reward / cashback tracking ----
     rewardPointsEarned: {
       type: Number,
       default: 0,
@@ -179,8 +169,6 @@ const receiptSchema = new mongoose.Schema(
     },
 
     // ---- M-Pesa Daraja STK Push tracking ----
-    // "staff" = waiter/admin initiated
-    // "wallet" = customer initiated
     mpesaSource: {
       type: String,
       enum: ["staff", "wallet", null],
@@ -213,13 +201,16 @@ const receiptSchema = new mongoose.Schema(
       default: null,
     },
 
+    // FIXED — "processing" added. This is the atomic-claim state used by
+    // the idempotent M-Pesa callback/poll/sweep logic from Phase 3; without
+    // it in the enum, any attempt to set this value throws a Mongoose
+    // validation error.
     mpesaStatus: {
       type: String,
-      enum: ["idle", "pending", "success", "failed"],
+      enum: ["idle", "pending", "processing", "success", "failed"],
       default: "idle",
     },
 
-    // Held while an STK push is in flight
     pendingCashAmount: {
       type: Number,
       default: 0,
@@ -230,37 +221,31 @@ const receiptSchema = new mongoose.Schema(
       default: 0,
     },
 
-    // Who initiated the wallet payment
     pendingPaidBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
     },
 
-    // ---- Customer manual till payment claims ----
     pendingManualPayments: [
       {
         amount: {
           type: Number,
           required: true,
         },
-
         reference: {
           type: String,
           required: true,
         },
-
         paidBy: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
           default: null,
         },
-
         paidByName: {
           type: String,
           default: null,
         },
-
         submittedAt: {
           type: Date,
           default: Date.now,
@@ -287,12 +272,14 @@ const receiptSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+
     mpesaInitiatedAt: { type: Date }, // when the STK push was actually sent — used for timeout detection
   },
   {
     timestamps: true,
   }
 );
+
 receiptSchema.pre("save", function (next) {
   this._justBecamePaid = this.isModified("status") && this.status === "paid";
   next();
@@ -303,6 +290,7 @@ receiptSchema.post("save", function (doc) {
     queueEtimsSubmission(doc); // fire-and-forget — not awaited, never blocks the response
   }
 });
+
 receiptSchema.index({ businessId: 1, billId: 1 }, { unique: true });
 receiptSchema.index({ businessId: 1, status: 1, createdAt: -1 });
 receiptSchema.index({ businessId: 1, status: 1, paidAt: -1 });
