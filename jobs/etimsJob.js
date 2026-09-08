@@ -39,7 +39,7 @@ export async function queueEtimsSubmission(receipt) {
       { $setOnInsert: { status: "queued" } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-await agenda.schedule("in 1 minute", "submit-etims", { submissionId: submission._id });
+await agenda.now("submit-etims", { submissionId: submission._id });
   } catch (error) {
     // Failing to QUEUE the job must never fail the sale itself — log and
     // move on. Worst case, it's caught by manual reconciliation later.
