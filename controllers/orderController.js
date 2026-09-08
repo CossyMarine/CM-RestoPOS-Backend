@@ -10,6 +10,9 @@ import { getKenyanDayBounds } from "../utils/dateHelpers.js";
 // @desc    Create a new order and receipt (staff/manual entry)
 // @route   POST /api/orders
 // @access  Protected — cashier, manager, admin, waiter
+// @desc    Create a new order and receipt (staff/manual entry)
+// @route   POST /api/orders
+// @access  Protected — cashier, manager, admin, waiter
 export const createOrder = async (req, res) => {
   const { businessId } = req;
   const { tableNumber, waiterName, items, clientRequestId } = req.body;
@@ -30,8 +33,58 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // ... existing menu-item validation and itemsWithSnapshot building, unchanged ...
+    // Any line referencing a real menu item must use that item's real price —
+    // client-supplied price is only trusted for genuinely off-menu/manual
+    // lines (no menuItemId), which the data model explicitly supports.
+    const menuItemIds = items.map((i) => i.menuItemId || i._id).filter(Boolean);
+    const menuItems = menuItemIds.length
+      ? await MenuItem.find({ _id: { $in: menuItemIds }, businessId })
+      : [];
+    const menuItemsById = new Map(menuItems.map((m) => [String(m._id), m]));
 
+    const itemsWithSnapshot = items.map((i) => {
+      const menuItemId = i.menuItemId || i._id || null;
+      const quantity = Number(i.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error(`Invalid quantity for ${i.mealName || "an item"}`);
+      }
+
+      if (menuItemId) {
+        const menuItem = menuItemsById.get(String(menuItemId));
+        if (!menuItem) {
+          throw new Error(`Menu item not found: ${menuItemId}`);
+        }
+        return {
+          menuItemId: menuItem._id,
+          mealName: menuItem.name,
+          imageUrl: menuItem.imageUrl || null,
+          quantity,
+          unitPrice: menuItem.price,
+          lineTotal: Number((menuItem.price * quantity).toFixed(2)),
+          ready: false,
+        };
+      }
+
+      // Explicit manual/off-menu line — no catalog item to check against.
+      const unitPrice = Number(i.unitPrice);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new Error(`Invalid price for ${i.mealName || "a manual item"}`);
+      }
+      return {
+        menuItemId: null,
+        mealName: i.mealName,
+        imageUrl: i.imageUrl || null,
+        quantity,
+        unitPrice,
+        lineTotal: Number((unitPrice * quantity).toFixed(2)),
+        ready: false,
+      };
+    });
+
+    const subtotal = Number(itemsWithSnapshot.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
+
+    // Staff-entered orders already have a waiter attached, so they go
+    // straight into the kitchen queue instead of waiting on "pending".
     const order = await Order.create({
       businessId,
       tableNumber,
@@ -63,7 +116,6 @@ export const createOrder = async (req, res) => {
     res.status(500).json({ message: error.message || "Failed to create order" });
   }
 };
-
 
 // @desc    Get all orders the kitchen hasn't finished
 // @route   GET /api/orders/pending
