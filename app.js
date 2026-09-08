@@ -25,6 +25,7 @@ import accountantRoutes from "./routes/accountantRoutes.js";
 import reportsRoutes from "./routes/reportsRoutes.js";
 import superAdminRoutes from "./routes/superAdminRoutes.js";
 import paymentConfigRoutes from "./routes/paymentConfigRoutes.js";
+import etimsRoutes from "./routes/etimsRoutes.js";
 dotenv.config();
 
 /* =================================================
@@ -113,4 +114,5 @@ app.use("/api/accountants", accountantRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/payment-config", paymentConfigRoutes);
+app.use("/api/etims", etimsRoutes);
 export default app;

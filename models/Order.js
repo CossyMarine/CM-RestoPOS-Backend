@@ -35,20 +35,29 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Registered customer who placed this order (online orders now require login)
+    // Dedupe key the client generates once per submit-attempt and resends
+    // unchanged on retry. Lets a dropped-connection retry safely resolve
+    // to the SAME order instead of creating a duplicate sale. Optional —
+    // older/other clients that don't send one simply skip this protection.
+    clientRequestId: { type: String, default: null },
+
     customer: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     customerName: { type: String, default: null },
 
-    // Kitchen timing — set once, on the transition into that status
-    servedAt:    { type: Date, default: null }, // when marked completed
+    servedAt:    { type: Date, default: null },
     cancelledAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
-// models/Order.js
+
 orderSchema.index({ businessId: 1, createdAt: -1 });
 orderSchema.index({ businessId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ businessId: 1, status: 1, servedAt: 1 });
+// Partial unique index — only enforces uniqueness when clientRequestId is
+// actually present, so it never affects orders that don't supply one.
+orderSchema.index(
+  { businessId: 1, clientRequestId: 1 },
+  { unique: true, partialFilterExpression: { clientRequestId: { $type: "string" } } }
+);
 orderSchema.plugin(tenantGuard);
-export default mongoose.model("Order", orderSchema);
 export { orderItemSchema };

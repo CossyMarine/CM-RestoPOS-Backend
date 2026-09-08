@@ -2,7 +2,7 @@
 import mongoose from "mongoose";
 import { orderItemSchema } from "./Order.js";
 import tenantGuard from "../Middlewares/plugins/tenantGuard.js";
-
+import { queueEtimsSubmission } from "../jobs/etimsJob.js";
 // One entry per payment towards a bill — supports partial payments,
 // multiple methods on the same bill, and a full audit trail.
 const paymentEntrySchema = new mongoose.Schema(
@@ -293,7 +293,16 @@ const receiptSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+receiptSchema.pre("save", function (next) {
+  this._justBecamePaid = this.isModified("status") && this.status === "paid";
+  next();
+});
 
+receiptSchema.post("save", function (doc) {
+  if (doc._justBecamePaid) {
+    queueEtimsSubmission(doc); // fire-and-forget — not awaited, never blocks the response
+  }
+});
 receiptSchema.index({ businessId: 1, billId: 1 }, { unique: true });
 receiptSchema.index({ businessId: 1, status: 1, createdAt: -1 });
 receiptSchema.index({ businessId: 1, status: 1, paidAt: -1 });

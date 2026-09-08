@@ -5,6 +5,10 @@ import http from "http";
 import { Server } from "socket.io";
 import { seedDefaultInventoryLocations } from "./models/InventoryLocation.js";
 import { sweepStalePendingMpesaPayments } from "./controllers/receiptController.js";
+import { startQueue } from "./utils/queue.js"; // NEW
+import "./jobs/etimsJob.js"; // NEW — registers the eTIMS job handler
+
+
 dotenv.config();
 
 /* ========================================
@@ -12,7 +16,10 @@ dotenv.config();
 ======================================== */
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected"))
+  .then(async () => {
+    console.log("✅ MongoDB connected");
+    await startQueue(); // NEW — start after Mongo is up, since Agenda stores jobs there
+  })
   .catch((err) => console.log("❌ MongoDB error:", err));
 const PORT = process.env.PORT || 5000;
 
