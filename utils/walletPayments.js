@@ -22,7 +22,14 @@ export const computeCashback = (amountKes, settings) => {
 // is responsible for saving the receipt. This is the ONE place cashback
 // gets computed, so every payment path (cash, till, STK, wallet) must call
 // this or cashback silently never gets credited.
-export const creditCashback = async (receipt, amount) => {
+//
+// `session` is optional — pass a Mongoose ClientSession when the caller is
+// running this inside a transaction (e.g. a payment write), so the points
+// credit and the RewardTransaction record roll back together with the
+// receipt/order writes if anything later in that transaction fails.
+// Omitting it preserves the old un-transacted behavior for any caller that
+// hasn't been updated yet.
+export const creditCashback = async (receipt, amount, session = null) => {
   if (!receipt.customer) return;
 
   const settings = await AdminSettings.getSettings(receipt.businessId);
@@ -32,17 +39,21 @@ export const creditCashback = async (receipt, amount) => {
   receipt.rewardPointsEarned = (receipt.rewardPointsEarned || 0) + points;
   await User.findOneAndUpdate(
     { _id: receipt.customer, businessId: receipt.businessId },
-    { $inc: { walletPoints: points } }
+    { $inc: { walletPoints: points } },
+    { session }
   );
-  await RewardTransaction.create({
-    businessId: receipt.businessId,
-    user: receipt.customer,
-    type: "earn",
-    points,
-    kesEquivalent: kes,
-    receipt: receipt._id,
-    note: `Cashback on payment of KES ${amount} for bill ${receipt.billId}`,
-  });
+  await RewardTransaction.create(
+    [{
+      businessId: receipt.businessId,
+      user: receipt.customer,
+      type: "earn",
+      points,
+      kesEquivalent: kes,
+      receipt: receipt._id,
+      note: `Cashback on payment of KES ${amount} for bill ${receipt.billId}`,
+    }],
+    { session }
+  );
 };
 
 // Record a payment entry on a bill, roll up the running total, flip status
@@ -50,7 +61,15 @@ export const creditCashback = async (receipt, amount) => {
 // Does NOT save `receipt` for the caller — callers should have already set
 // any of their own fields (e.g. mpesaStatus) before calling, since this
 // function performs the single `receipt.save()`.
-export const applyPaymentToReceipt = async ({ receipt, amount, method, reference, paidBy, io }) => {
+//
+// Does NOT emit any socket events, and no longer takes an `io` param — this
+// function has no way of knowing whether the caller is running it inside a
+// transaction that could still roll back after it returns. Emitting from in
+// here risked telling the frontend a payment succeeded before it was
+// actually durable. Every caller is responsible for emitting
+// "receipt:updated"/"receipt:paid" itself, only after this call (and any
+// surrounding transaction) has genuinely completed.
+export const applyPaymentToReceipt = async ({ receipt, amount, method, reference, paidBy }) => {
   amount = Number(Number(amount).toFixed(2));
 
   receipt.payments.push({ amount, method, reference: reference || null, paidBy: paidBy || null, paidAt: new Date() });
@@ -78,21 +97,16 @@ export const applyPaymentToReceipt = async ({ receipt, amount, method, reference
     }
   }
 
-  if (io) {
-    io.emit("receipt:updated", receipt);
-    if (receipt.status === "paid") io.emit("receipt:paid", receipt);
-  }
-
   return receipt;
 };
 
 // Redeem `pointsToRedeem` from `user`'s reward balance against `receipt`'s
 // balance due. Redeems less than requested if the balance due is smaller.
-export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io }) => {
-  // Guard against redeeming a customer's points against a bill from a
-  // different business — findCustomerByIdentifier is now businessId-scoped
-  // at the call site, but this is cheap insurance against a future caller
-  // that isn't.
+//
+// Does NOT emit any socket events, and no longer takes an `io` param — same
+// reasoning as applyPaymentToReceipt above. The caller emits after this
+// (and any surrounding transaction) has actually completed.
+export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, session = null }) => {
   if (String(user.businessId) !== String(receipt.businessId)) {
     throw new Error("This customer does not belong to the same business as this bill");
   }
@@ -128,26 +142,29 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
   receipt.status = totalPaid >= owed ? "paid" : "partial";
   if (receipt.status === "paid") receipt.paidAt = new Date();
 
-  await receipt.save();
+  await receipt.save({ session });
   await User.findOneAndUpdate(
     { _id: user._id, businessId: receipt.businessId },
     { $inc: { walletPoints: -pointsUsed } }
+  ).session(session);
+  await RewardTransaction.create(
+    [{
+      businessId: receipt.businessId,
+      user: user._id,
+      type: "redeem",
+      points: -pointsUsed,
+      kesEquivalent: -amountToApply,
+      receipt: receipt._id,
+      note: `Redeemed against bill ${receipt.billId}`,
+    }],
+    { session }
   );
-  await RewardTransaction.create({
-    businessId: receipt.businessId,
-    user: user._id,
-    type: "redeem",
-    points: -pointsUsed,
-    kesEquivalent: -amountToApply,
-    receipt: receipt._id,
-    note: `Redeemed against bill ${receipt.billId}`,
-  });
 
   if (receipt.status === "paid") {
     const updatedOrder = await Order.findOneAndUpdate(
       { _id: receipt.order, businessId: receipt.businessId },
       { status: "completed" }
-    );
+    ).session(session);
     if (!updatedOrder) {
       console.warn(
         `applyRewardRedemption: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${receipt.businessId} — possible cross-tenant data issue`
@@ -155,12 +172,136 @@ export const applyRewardRedemption = async ({ receipt, user, pointsToRedeem, io 
     }
   }
 
+  // No socket emit here anymore — payCombo fires events once the whole
+  // transaction has actually committed, not mid-transaction where it could
+  // still roll back.
+
+  return { receipt, pointsUsed, kesApplied: amountToApply };
+};
+
+Note: this function is only called from payCombo in your codebase (I checked) — so removing io from its signature doesn't break any other caller.
+
+3. controllers/receiptController.js — payCombo, fully rewritten with a real transaction
+js
+// FIND: the entire existing payCombo function (from `export const payCombo = async (req, res) => {` to its closing `};`)
+
+// REPLACE:
+export const payCombo = async (req, res) => {
+  const { id } = req.params;
+  let { cashAmount, tillAmount, rewardIdentifier, rewardAmount } = req.body;
+
+  cashAmount = parseFloat(cashAmount) || 0;
+  tillAmount = parseFloat(tillAmount) || 0;
+  rewardAmount = parseFloat(rewardAmount) || 0;
+
+  if (cashAmount < 0 || tillAmount < 0 || rewardAmount < 0) {
+    return res.status(400).json({ message: "Amounts cannot be negative" });
+  }
+  if (cashAmount === 0 && tillAmount === 0 && rewardAmount === 0) {
+    return res.status(400).json({ message: "Enter at least one amount" });
+  }
+
+  const { businessId } = req;
+  const io = req.app.get("io");
+  const session = await mongoose.startSession();
+
+  let receipt;
+  let balanceRemaining = 0;
+
+  try {
+    await session.withTransaction(async () => {
+      receipt = await Receipt.findOne({ _id: id, businessId }).session(session);
+      if (!receipt) throw new Error("Receipt not found");
+      if (receipt.status !== "unpaid") throw new Error("Receipt is already paid or voided");
+      if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
+
+      const owed = receipt.totalDue ?? receipt.subtotal;
+      const balanceBefore = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
+      const combinedAmount = Number((cashAmount + tillAmount + rewardAmount).toFixed(2));
+      if (Math.abs(combinedAmount - balanceBefore) > 0.01) {
+        throw new Error(
+          combinedAmount < balanceBefore
+            ? `Amount entered (KES ${combinedAmount.toLocaleString()}) is less than the balance due (KES ${balanceBefore.toLocaleString()}) — make up the full amount to complete this payment`
+            : `Combined amount cannot exceed the balance due (KES ${balanceBefore.toLocaleString()})`
+        );
+      }
+
+      // ---- Reward leg first — needs the customer's own points balance ----
+      if (rewardAmount > 0) {
+        if (!rewardIdentifier || !rewardIdentifier.trim()) {
+          throw new Error("Customer email or phone is required to redeem reward points");
+        }
+        const customer = await findCustomerByIdentifier(rewardIdentifier, businessId);
+        if (!customer) {
+          throw new Error("No registered customer found with that email or phone");
+        }
+        const settings = await AdminSettings.getSettings(businessId);
+        const pointValue = settings.reward.pointValueKes || 1;
+        const pointsToRedeem = Math.ceil(rewardAmount / pointValue);
+        if (pointsToRedeem > (customer.walletPoints || 0)) {
+          throw new Error(`${customer.fullName} only has ${customer.walletPoints} points available`);
+        }
+        await applyRewardRedemption({ receipt, user: customer, pointsToRedeem, session });
+        // applyRewardRedemption already saved the receipt, inside this same
+        // transaction — keep working off the same in-memory doc, it's current.
+      }
+
+      // ---- Cash / till legs ----
+      if (cashAmount > 0) {
+        receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
+        receipt.payments.push({ amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() });
+        await creditCashback(receipt, cashAmount, session);
+      }
+      if (tillAmount > 0) {
+        receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
+        receipt.payments.push({ amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() });
+        await creditCashback(receipt, tillAmount, session);
+      }
+
+      if (cashAmount > 0 || tillAmount > 0) {
+        const totalPaid = receipt.payments.reduce((sum, p) => sum + p.amount, 0);
+        receipt.amountPaid = Number(totalPaid.toFixed(2));
+        receipt.paymentMethod = receipt.payments.length > 1 ? "both" : cashAmount > 0 ? "cash" : "manual_till";
+        receipt.status = totalPaid >= owed ? "paid" : "partial";
+        if (receipt.status === "paid") receipt.paidAt = new Date();
+        receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+        await receipt.save({ session });
+      }
+
+      if (receipt.status === "paid") {
+        const updatedOrder = await Order.findOneAndUpdate(
+          { _id: receipt.order, businessId },
+          { status: "completed" }
+        ).session(session);
+        if (!updatedOrder) {
+          console.warn(
+            `payCombo: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+          );
+        }
+      }
+
+      balanceRemaining = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
+    });
+  } catch (error) {
+    await session.endSession();
+    console.error("Error processing combo payment:", error.message);
+    return res.status(400).json({ message: error.message || "Failed to process payment" });
+  }
+
+  await session.endSession();
+
+  // Socket events only fire AFTER the transaction has actually committed —
+  // never from mid-transaction, where it could still roll back.
   if (io) {
     io.emit("receipt:updated", receipt);
     if (receipt.status === "paid") io.emit("receipt:paid", receipt);
   }
 
-  return { receipt, pointsUsed, kesApplied: amountToApply };
+  res.json({
+    message: receipt.status === "paid" ? "Payment complete" : `Applied — KES ${balanceRemaining.toLocaleString()} still due`,
+    receipt,
+    balanceRemaining,
+  });
 };
 // NEW — moved out of walletController.js so other controllers can reuse it
 // Scoped to businessId: this is used from inside already-authenticated,

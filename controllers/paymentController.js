@@ -263,9 +263,10 @@ export const confirmManualPayment = async (req, res) => {
       method: "manual_till",
       reference,
       paidBy,
-      io,
     });
 
+    io.emit("receipt:updated", updated);
+    if (updated.status === "paid") io.emit("receipt:paid", updated);
     io.emit("receipt:manualPaymentResolved", { receiptId: updated._id, paymentId, action: "confirmed" });
 
     res.json({ message: "Payment confirmed", receipt: updated });

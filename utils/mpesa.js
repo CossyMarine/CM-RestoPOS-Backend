@@ -5,6 +5,13 @@
 // per-tenant, not platform-wide.
 import axios from "axios";
 
+// None of Daraja's own timeouts are documented reliably, and a stalled
+// request here blocks a payment request/response cycle indefinitely if we
+// don't bound it ourselves. This is a timeout on Daraja *accepting* the
+// request — it has nothing to do with how long the customer takes to enter
+// their PIN, which happens later and asynchronously via the callback.
+const REQUEST_TIMEOUT_MS = 15000;
+
 const BASE_URLS = {
   sandbox: "https://sandbox.safaricom.co.ke",
   production: "https://api.safaricom.co.ke",
@@ -25,9 +32,11 @@ export const getAccessToken = async ({ consumerKey, consumerSecret, environment 
   const BASE_URL = BASE_URLS[environment] || BASE_URLS.sandbox;
   const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
 
-  const { data } = await axios.get(
-    `${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
-    { headers: { Authorization: `Basic ${auth}` } }
+  const { data } = await withRetry(() =>
+    axios.get(
+      `${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
+      { headers: { Authorization: `Basic ${auth}` }, timeout: REQUEST_TIMEOUT_MS }
+    )
   );
 
   tokenCache.set(consumerKey, {
@@ -96,10 +105,17 @@ export const stkPush = async ({
     TransactionDesc: (description || "Bill payment").slice(0, 13),
   };
 
+  // Deliberately NOT wrapped in withRetry: this triggers a real phone
+  // prompt on the customer's handset. If the request actually reached
+  // Daraja and only the response was lost to a network blip, retrying
+  // would send the customer a second PIN prompt for the same bill. A
+  // timeout here means "we don't know if it went through," not "it
+  // didn't" — that ambiguity has to be resolved by stkQuery/the callback,
+  // never papered over with a retry.
   const { data } = await axios.post(
     `${BASE_URL}/mpesa/stkpush/v1/processrequest`,
     payload,
-    { headers: { Authorization: `Bearer ${token}` } }
+    { headers: { Authorization: `Bearer ${token}` }, timeout: REQUEST_TIMEOUT_MS }
   );
 
   return data; // { MerchantRequestID, CheckoutRequestID, ResponseCode, ResponseDescription, ... }
@@ -117,10 +133,12 @@ export const stkQuery = async ({ checkoutRequestId, shortcode, consumerKey, cons
     CheckoutRequestID: checkoutRequestId,
   };
 
-  const { data } = await axios.post(
-    `${BASE_URL}/mpesa/stkpushquery/v1/query`,
-    payload,
-    { headers: { Authorization: `Bearer ${token}` } }
+  const { data } = await withRetry(() =>
+    axios.post(
+      `${BASE_URL}/mpesa/stkpushquery/v1/query`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: REQUEST_TIMEOUT_MS }
+    )
   );
 
   return data; // { ResultCode, ResultDesc, ... }

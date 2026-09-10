@@ -172,8 +172,9 @@ export const payWithManualTill = async (req, res) => {
         method: "manual_till",
         reference: reference && reference.trim() ? reference.trim() : null,
         paidBy: req.user._id,
-        io,
       });
+      io.emit("receipt:updated", updated);
+      if (updated.status === "paid") io.emit("receipt:paid", updated);
       return res.json({ message: "Payment recorded", receipt: updated });
     }
 
@@ -309,7 +310,10 @@ export const payWithReward = async (req, res) => {
     }
 
     const io = req.app.get("io");
-    const result = await applyRewardRedemption({ receipt, user, pointsToRedeem, io });
+    const result = await applyRewardRedemption({ receipt, user, pointsToRedeem });
+
+    io.emit("receipt:updated", result.receipt);
+    if (result.receipt.status === "paid") io.emit("receipt:paid", result.receipt);
 
     res.json({
       message: `Applied ${result.pointsUsed} points (KES ${result.kesApplied}) to the bill`,
@@ -403,7 +407,10 @@ export const adminPayWithReward = async (req, res) => {
     }
 
     const io = req.app.get("io");
-    const result = await applyRewardRedemption({ receipt, user: customer, pointsToRedeem, io });
+    const result = await applyRewardRedemption({ receipt, user: customer, pointsToRedeem });
+
+    io.emit("receipt:updated", result.receipt);
+    if (result.receipt.status === "paid") io.emit("receipt:paid", result.receipt);
 
     res.json({
       message: `Applied ${result.pointsUsed} points (KES ${result.kesApplied}) from ${customer.fullName}'s reward balance`,

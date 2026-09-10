@@ -1,4 +1,5 @@
 // controllers/receiptController.js
+import mongoose from "mongoose";
 import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
 import AdminSettings from "../models/AdminSettings.js";
@@ -61,60 +62,82 @@ export const payReceipt = async (req, res) => {
   const { amountPaid } = req.body;
   const { businessId } = req;
 
+  const session = await mongoose.startSession();
   try {
-    const receipt = await Receipt.findOne({ _id: id, businessId });
-    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
-    if (receipt.status !== "unpaid") {
-      return res.status(400).json({ message: "Receipt is already paid or voided" });
-    }
-    const received = parseFloat(amountPaid);
-    const owed = receipt.totalDue ?? receipt.subtotal;
-const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
-    if (isNaN(received) || received < balanceDue) {
-      return res.status(400).json({ message: "Amount received cannot be less than the balance due" });
-    }
+    let receipt;
+    await session.withTransaction(async () => {
+      receipt = await Receipt.findOne({ _id: id, businessId }).session(session);
+      if (!receipt) {
+        const err = new Error("Receipt not found");
+        err.status = 404;
+        throw err;
+      }
+      if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
+      if (receipt.status !== "unpaid") {
+        const err = new Error("Receipt is already paid or voided");
+        err.status = 400;
+        throw err;
+      }
+      const received = parseFloat(amountPaid);
+      const owed = receipt.totalDue ?? receipt.subtotal;
+      const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
+      if (isNaN(received) || received < balanceDue) {
+        const err = new Error("Amount received cannot be less than the balance due");
+        err.status = 400;
+        throw err;
+      }
 
-    const changeGiven = Number((received - balanceDue).toFixed(2));
+      const changeGiven = Number((received - balanceDue).toFixed(2));
 
-    receipt.status = "paid";
-    receipt.paymentMethod = "cash";
-    receipt.cashAmount = (receipt.cashAmount || 0) + balanceDue;
-    receipt.tillAmount = receipt.tillAmount || 0;
-   receipt.amountPaid = owed;
-    receipt.changeGiven = changeGiven;
-    receipt.paidAt = new Date();
-    receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
-    receipt.payments.push({
-      amount: balanceDue,
-      method: "cash",
-      paidBy: req.user?._id || null,
-      paidAt: new Date(),
+      receipt.status = "paid";
+      receipt.paymentMethod = "cash";
+      receipt.cashAmount = (receipt.cashAmount || 0) + balanceDue;
+      receipt.tillAmount = receipt.tillAmount || 0;
+      receipt.amountPaid = owed;
+      receipt.changeGiven = changeGiven;
+      receipt.paidAt = new Date();
+      receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+      receipt.payments.push({
+        amount: balanceDue,
+        method: "cash",
+        paidBy: req.user?._id || null,
+        paidAt: new Date(),
+      });
+
+      // Cashback is earned on the amount actually applied to the bill, not
+      // the raw cash handed over (change given isn't real revenue). Runs
+      // inside this transaction so the points credit rolls back with
+      // everything else if a later step in here fails.
+      await creditCashback(receipt, balanceDue, session);
+
+      await receipt.save({ session });
+
+      const updatedOrder = await Order.findOneAndUpdate(
+        { _id: receipt.order, businessId },
+        { status: "completed" },
+        { session }
+      );
+      if (!updatedOrder) {
+        console.warn(
+          `payReceipt: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+        );
+      }
     });
 
-    // Cashback is earned on the amount actually applied to the bill, not
-    // the raw cash handed over (change given isn't real revenue).
-    await creditCashback(receipt, balanceDue);
-
-    await receipt.save();
-
-    const updatedOrder = await Order.findOneAndUpdate(
-      { _id: receipt.order, businessId },
-      { status: "completed" }
-    );
-    if (!updatedOrder) {
-      console.warn(
-        `payReceipt: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
-      );
-    }
-
+    // Only reachable once the transaction has actually committed — the
+    // frontend is never told a payment succeeded before it's durable.
     const io = req.app.get("io");
     io.emit("receipt:paid", receipt);
 
     res.json({ message: "Payment successful", receipt });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ message: error.message });
+    }
     console.error("Error processing payment:", error.message);
     res.status(500).json({ message: "Failed to process payment", error: error.message });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -193,8 +216,10 @@ const finalizeWalletMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) =
     method: "mpesa_stk",
     reference: receipt.mpesaReceiptNumber,
     paidBy,
-    io,
   });
+
+  io.emit("receipt:updated", updated);
+  if (updated.status === "paid") io.emit("receipt:paid", updated);
 
   io.emit("mpesa:result", {
     checkoutRequestId: updated.mpesaCheckoutRequestId,
@@ -464,63 +489,82 @@ export const payCashAndTill = async (req, res) => {
   let { cashAmount } = req.body;
   const { businessId } = req;
 
+  const session = await mongoose.startSession();
   try {
-    const receipt = await Receipt.findOne({ _id: id, businessId });
-    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
-    if (receipt.status !== "unpaid") {
-      return res.status(400).json({ message: "Receipt is already paid or voided" });
-    }
-    const owed = receipt.totalDue ?? receipt.subtotal;                    // ← added
-    const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2)); // ← changed
-    cashAmount = parseFloat(cashAmount);
+    let receipt;
+    await session.withTransaction(async () => {
+      receipt = await Receipt.findOne({ _id: id, businessId }).session(session);
+      if (!receipt) {
+        const err = new Error("Receipt not found");
+        err.status = 404;
+        throw err;
+      }
+      if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
+      if (receipt.status !== "unpaid") {
+        const err = new Error("Receipt is already paid or voided");
+        err.status = 400;
+        throw err;
+      }
+      const owed = receipt.totalDue ?? receipt.subtotal;
+      const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
+      cashAmount = parseFloat(cashAmount);
 
-    if (isNaN(cashAmount) || cashAmount <= 0) {
-      return res.status(400).json({ message: "Cash amount must be more than 0" });
-    }
-    if (cashAmount >= balanceDue) {
-      return res.status(400).json({
-        message: "Cash amount covers the full balance — use Cash payment instead",
-      });
-    }
+      if (isNaN(cashAmount) || cashAmount <= 0) {
+        const err = new Error("Cash amount must be more than 0");
+        err.status = 400;
+        throw err;
+      }
+      if (cashAmount >= balanceDue) {
+        const err = new Error("Cash amount covers the full balance — use Cash payment instead");
+        err.status = 400;
+        throw err;
+      }
 
-    const tillAmount = Number((balanceDue - cashAmount).toFixed(2));
+      const tillAmount = Number((balanceDue - cashAmount).toFixed(2));
 
-    receipt.status = "paid";
-    receipt.paymentMethod = "both";
-    receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
-    receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
-    receipt.amountPaid = owed;                                            // ← changed
-    receipt.changeGiven = 0;
-    receipt.paidAt = new Date();
-    receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
-    receipt.payments.push(
-      { amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() },
-      { amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() }
-    );
-
-    // Cashback on the full balance just settled (cash + till combined).
-    await creditCashback(receipt, cashAmount + tillAmount);
-
-    await receipt.save();
-
-    const updatedOrder = await Order.findOneAndUpdate(
-      { _id: receipt.order, businessId },
-      { status: "completed" }
-    );
-    if (!updatedOrder) {
-      console.warn(
-        `payCashAndTill: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+      receipt.status = "paid";
+      receipt.paymentMethod = "both";
+      receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
+      receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
+      receipt.amountPaid = owed;
+      receipt.changeGiven = 0;
+      receipt.paidAt = new Date();
+      receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+      receipt.payments.push(
+        { amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() },
+        { amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() }
       );
-    }
+
+      // Cashback on the full balance just settled (cash + till combined).
+      // Runs inside this transaction, same as payReceipt.
+      await creditCashback(receipt, cashAmount + tillAmount, session);
+
+      await receipt.save({ session });
+
+      const updatedOrder = await Order.findOneAndUpdate(
+        { _id: receipt.order, businessId },
+        { status: "completed" },
+        { session }
+      );
+      if (!updatedOrder) {
+        console.warn(
+          `payCashAndTill: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+        );
+      }
+    });
 
     const io = req.app.get("io");
     io.emit("receipt:paid", receipt);
 
     res.json({ message: "Payment successful", receipt });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ message: error.message });
+    }
     console.error("Error processing cash+till payment:", error.message);
     res.status(500).json({ message: "Failed to process payment", error: error.message });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -588,9 +632,11 @@ export const payCombo = async (req, res) => {
           message: `${customer.fullName} only has ${customer.walletPoints} points available`,
         });
       }
-      await applyRewardRedemption({ receipt, user: customer, pointsToRedeem, io });
+      await applyRewardRedemption({ receipt, user: customer, pointsToRedeem });
       // applyRewardRedemption already saved the receipt — keep working off
-      // the same in-memory doc, it's up to date.
+      // the same in-memory doc, it's up to date. It no longer emits itself;
+      // the single emit at the end of this function covers the receipt's
+      // true final state after the cash/till legs below are also applied.
     }
 
     // ---- Cash / till legs ----
