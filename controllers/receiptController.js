@@ -594,91 +594,110 @@ export const payCombo = async (req, res) => {
   }
 
   const { businessId } = req;
+  const session = await mongoose.startSession();
 
   try {
-    const receipt = await Receipt.findOne({ _id: id, businessId });
-    if (!receipt) return res.status(404).json({ message: "Receipt not found" });
-    if (receipt.status !== "unpaid") {
-      return res.status(400).json({ message: "Receipt is already paid or voided" });
-    }    if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
+    let receipt;
+    let balanceRemaining = 0;
 
-    const owed = receipt.totalDue ?? receipt.subtotal;
-    const balanceBefore = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
-    const combinedAmount = Number((cashAmount + tillAmount + rewardAmount).toFixed(2));
-    if (Math.abs(combinedAmount - balanceBefore) > 0.01) {
-      return res.status(400).json({
-        message:
+    await session.withTransaction(async () => {
+      receipt = await Receipt.findOne({ _id: id, businessId }).session(session);
+      if (!receipt) {
+        const err = new Error("Receipt not found");
+        err.status = 404;
+        throw err;
+      }
+      if (receipt.status !== "unpaid") {
+        const err = new Error("Receipt is already paid or voided");
+        err.status = 400;
+        throw err;
+      }
+      if (req.shift && !receipt.shift) receipt.shift = req.shift._id;
+
+      const owed = receipt.totalDue ?? receipt.subtotal;
+      const balanceBefore = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
+      const combinedAmount = Number((cashAmount + tillAmount + rewardAmount).toFixed(2));
+      if (Math.abs(combinedAmount - balanceBefore) > 0.01) {
+        const err = new Error(
           combinedAmount < balanceBefore
             ? `Amount entered (KES ${combinedAmount.toLocaleString()}) is less than the balance due (KES ${balanceBefore.toLocaleString()}) — make up the full amount to complete this payment`
-            : `Combined amount cannot exceed the balance due (KES ${balanceBefore.toLocaleString()})`,
-      });
-    }
-    const io = req.app.get("io");
-
-    // ---- Reward leg first — needs the customer's own points balance ----
-    if (rewardAmount > 0) {
-      if (!rewardIdentifier || !rewardIdentifier.trim()) {
-        return res.status(400).json({ message: "Customer email or phone is required to redeem reward points" });
-      }
-      const customer = await findCustomerByIdentifier(rewardIdentifier, businessId);
-      if (!customer) {
-        return res.status(404).json({ message: "No registered customer found with that email or phone" });
-      }
-      const settings = await AdminSettings.getSettings(businessId);
-      const pointValue = settings.reward.pointValueKes || 1;
-      const pointsToRedeem = Math.ceil(rewardAmount / pointValue);
-      if (pointsToRedeem > (customer.walletPoints || 0)) {
-        return res.status(400).json({
-          message: `${customer.fullName} only has ${customer.walletPoints} points available`,
-        });
-      }
-      await applyRewardRedemption({ receipt, user: customer, pointsToRedeem });
-      // applyRewardRedemption already saved the receipt — keep working off
-      // the same in-memory doc, it's up to date. It no longer emits itself;
-      // the single emit at the end of this function covers the receipt's
-      // true final state after the cash/till legs below are also applied.
-    }
-
-    // ---- Cash / till legs ----
-    if (cashAmount > 0) {
-      receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
-      receipt.payments.push({ amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() });
-      await creditCashback(receipt, cashAmount);
-    }
-    if (tillAmount > 0) {
-      receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
-      receipt.payments.push({ amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() });
-      await creditCashback(receipt, tillAmount);
-    }
-
-    if (cashAmount > 0 || tillAmount > 0) {
-      const totalPaid = receipt.payments.reduce((sum, p) => sum + p.amount, 0);
-      receipt.amountPaid = Number(totalPaid.toFixed(2));
-      receipt.paymentMethod = receipt.payments.length > 1 ? "both" : cashAmount > 0 ? "cash" : "manual_till";
-      receipt.status = totalPaid >= owed ? "paid" : "partial";
-      if (receipt.status === "paid") receipt.paidAt = new Date();
-      receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
-      await receipt.save();
-    }
-
-    if (receipt.status === "paid") {
-      const updatedOrder = await Order.findOneAndUpdate(
-        { _id: receipt.order, businessId },
-        { status: "completed" }
-      );
-      if (!updatedOrder) {
-        console.warn(
-          `payCombo: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+            : `Combined amount cannot exceed the balance due (KES ${balanceBefore.toLocaleString()})`
         );
+        err.status = 400;
+        throw err;
       }
-    }
 
+      // ---- Reward leg first — needs the customer's own points balance ----
+      if (rewardAmount > 0) {
+        if (!rewardIdentifier || !rewardIdentifier.trim()) {
+          const err = new Error("Customer email or phone is required to redeem reward points");
+          err.status = 400;
+          throw err;
+        }
+        const customer = await findCustomerByIdentifier(rewardIdentifier, businessId);
+        if (!customer) {
+          const err = new Error("No registered customer found with that email or phone");
+          err.status = 404;
+          throw err;
+        }
+        const settings = await AdminSettings.getSettings(businessId);
+        const pointValue = settings.reward.pointValueKes || 1;
+        const pointsToRedeem = Math.ceil(rewardAmount / pointValue);
+        if (pointsToRedeem > (customer.walletPoints || 0)) {
+          const err = new Error(`${customer.fullName} only has ${customer.walletPoints} points available`);
+          err.status = 400;
+          throw err;
+        }
+        await applyRewardRedemption({ receipt, user: customer, pointsToRedeem, session });
+        // applyRewardRedemption already saved the receipt, inside this same
+        // transaction — keep working off the same in-memory doc, it's current.
+      }
+
+      // ---- Cash / till legs ----
+      if (cashAmount > 0) {
+        receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
+        receipt.payments.push({ amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() });
+        await creditCashback(receipt, cashAmount, session);
+      }
+      if (tillAmount > 0) {
+        receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
+        receipt.payments.push({ amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() });
+        await creditCashback(receipt, tillAmount, session);
+      }
+
+      if (cashAmount > 0 || tillAmount > 0) {
+        const totalPaid = receipt.payments.reduce((sum, p) => sum + p.amount, 0);
+        receipt.amountPaid = Number(totalPaid.toFixed(2));
+        receipt.paymentMethod = receipt.payments.length > 1 ? "both" : cashAmount > 0 ? "cash" : "manual_till";
+        receipt.status = totalPaid >= owed ? "paid" : "partial";
+        if (receipt.status === "paid") receipt.paidAt = new Date();
+        receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+        await receipt.save({ session });
+      }
+
+      if (receipt.status === "paid") {
+        const updatedOrder = await Order.findOneAndUpdate(
+          { _id: receipt.order, businessId },
+          { status: "completed" },
+          { session }
+        );
+        if (!updatedOrder) {
+          console.warn(
+            `payCombo: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${businessId} — possible cross-tenant data issue`
+          );
+        }
+      }
+
+      balanceRemaining = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
+    });
+
+    // Only reachable once the transaction has actually committed — the
+    // frontend is never told a payment succeeded before it's durable.
+    const io = req.app.get("io");
     if (io) {
       io.emit("receipt:updated", receipt);
       if (receipt.status === "paid") io.emit("receipt:paid", receipt);
     }
-
-    const balanceRemaining = Number((owed - (receipt.amountPaid || 0)).toFixed(2));
 
     res.json({
       message: receipt.status === "paid" ? "Payment complete" : `Applied — KES ${balanceRemaining.toLocaleString()} still due`,
@@ -686,8 +705,13 @@ export const payCombo = async (req, res) => {
       balanceRemaining,
     });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ message: error.message });
+    }
     console.error("Error processing combo payment:", error.message);
-    res.status(400).json({ message: error.message || "Failed to process payment" });
+    res.status(500).json({ message: "Failed to process payment", error: error.message });
+  } finally {
+    session.endSession();
   }
 };
 // Catches STK pushes that never got a callback AND were never manually
