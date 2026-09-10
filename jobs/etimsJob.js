@@ -1,48 +1,126 @@
-// jobs/etimsJob.js
 import { agenda, withJobRetry } from "../utils/queue.js";
 import EtimsSubmission from "../models/EtimsSubmission.js";
 import Business from "../models/Business.js";
 import Receipt from "../models/Receipt.js";
 import { submitReceiptToEtims } from "../utils/etims.js";
 
+const MAX_ETIMS_ATTEMPTS = 6;
+const STALE_PROCESSING_MS = 5 * 60 * 1000;
+
 agenda.define(
   "submit-etims",
-  withJobRetry(async (job) => {
-    const { submissionId } = job.attrs.data;
+  withJobRetry(
+    async (job) => {
+      const { submissionId } = job.attrs.data;
+      const attempt = (job.attrs.data?._attempts || 0) + 1;
+      const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS);
 
-    const submission = await EtimsSubmission.findOne({ _id: submissionId, _bypassTenantGuard: true });
-    if (!submission || submission.status === "submitted") return; // already done, or gone
+      // Atomically claim this submission. A second Agenda job cannot submit
+      // the same receipt while this one is processing it.
+      const submission = await EtimsSubmission.findOneAndUpdate(
+        {
+          _id: submissionId,
+          _bypassTenantGuard: true,
+          $or: [
+            { status: "queued" },
+            { status: "failed" },
+            {
+              status: "processing",
+              processingStartedAt: { $lte: staleBefore },
+            },
+          ],
+        },
+        {
+          $set: {
+            status: "processing",
+            processingStartedAt: new Date(),
+          },
+        },
+        { new: true }
+      );
 
-    const [business, receipt] = await Promise.all([
-      Business.findOne({ _id: submission.businessId, _bypassTenantGuard: true }).select("taxPin"),
-      Receipt.findOne({ _id: submission.receiptId, businessId: submission.businessId }),
-    ]);
-    if (!receipt) throw new Error("Receipt no longer exists");
+      // Already submitted, actively being processed, deleted, or otherwise
+      // not eligible for this job. Safely do nothing.
+      if (!submission) return;
 
-    const result = await submitReceiptToEtims({ receipt, businessTaxPin: business?.taxPin });
+      try {
+        const [business, receipt] = await Promise.all([
+          Business.findOne({
+            _id: submission.businessId,
+            _bypassTenantGuard: true,
+          }).select("taxPin"),
 
-    submission.status = "submitted";
-    submission.etimsInvoiceNumber = result?.invoiceNumber || null;
-    submission.submittedAt = new Date();
-    submission.attempts += 1;
-    await submission.save();
-  }, { maxAttempts: 6, baseDelayMinutes: 2 }) // 2, 4, 8, 16, 32 min backoff, then dead-letter
+          Receipt.findOne({
+            _id: submission.receiptId,
+            businessId: submission.businessId,
+            _bypassTenantGuard: true,
+          }),
+        ]);
+
+        if (!receipt) {
+          throw new Error("Receipt no longer exists");
+        }
+
+        const result = await submitReceiptToEtims({
+          receipt,
+          businessTaxPin: business?.taxPin,
+        });
+
+        submission.status = "submitted";
+        submission.etimsInvoiceNumber = result?.invoiceNumber || null;
+        submission.submittedAt = new Date();
+        submission.processingStartedAt = null;
+        submission.attempts = attempt;
+        submission.lastError = null;
+
+        await submission.save();
+      } catch (error) {
+        submission.attempts = attempt;
+        submission.lastError = error.message || "Unknown eTIMS submission error";
+        submission.processingStartedAt = null;
+        submission.status =
+          attempt >= MAX_ETIMS_ATTEMPTS ? "failed-permanent" : "failed";
+
+        await submission.save();
+
+        throw error;
+      }
+    },
+    {
+      maxAttempts: MAX_ETIMS_ATTEMPTS,
+      baseDelayMinutes: 2,
+    }
+  )
 );
 
-// Called from wherever a receipt is settled — never awaited by the request
-// that settles the sale. Creates the tracking row and schedules the job
-// "now" (Agenda still processes it async, off the request thread).
+// Creates exactly one durable submission record for a paid receipt, then
+// schedules asynchronous processing. Any failure here is intentionally
+// isolated from the completed sale.
 export async function queueEtimsSubmission(receipt) {
   try {
     const submission = await EtimsSubmission.findOneAndUpdate(
-      { businessId: receipt.businessId, receiptId: receipt._id },
-      { $setOnInsert: { status: "queued" } },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      {
+        businessId: receipt.businessId,
+        receiptId: receipt._id,
+      },
+      {
+        $setOnInsert: {
+          status: "queued",
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      }
     );
-await agenda.now("submit-etims", { submissionId: submission._id });
+
+    if (submission.status === "submitted") return;
+
+    await agenda.now("submit-etims", {
+      submissionId: submission._id,
+    });
   } catch (error) {
-    // Failing to QUEUE the job must never fail the sale itself — log and
-    // move on. Worst case, it's caught by manual reconciliation later.
     console.error("Failed to queue eTIMS submission:", error.message);
   }
 }

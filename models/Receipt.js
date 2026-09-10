@@ -207,7 +207,7 @@ const receiptSchema = new mongoose.Schema(
     // validation error.
     mpesaStatus: {
       type: String,
-      enum: ["idle", "pending", "processing", "success", "failed"],
+      enum: ["idle", "initiating", "pending", "processing", "success", "failed"],
       default: "idle",
     },
 
@@ -275,6 +275,11 @@ const receiptSchema = new mongoose.Schema(
 
     mpesaInitiatedAt: { type: Date }, // when the STK push was actually sent — used for timeout detection
   },
+  mpesaActiveAttempt: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "MpesaPaymentAttempt",
+  default: null,
+},
   {
     timestamps: true,
   }
@@ -292,6 +297,7 @@ receiptSchema.post("save", function (doc) {
 });
 
 receiptSchema.index({ businessId: 1, billId: 1 }, { unique: true });
+receiptSchema.index({ businessId: 1, order: 1 }, { unique: true });
 receiptSchema.index({ businessId: 1, status: 1, createdAt: -1 });
 receiptSchema.index({ businessId: 1, status: 1, paidAt: -1 });
 receiptSchema.index({ businessId: 1, waiterName: 1, createdAt: -1 });

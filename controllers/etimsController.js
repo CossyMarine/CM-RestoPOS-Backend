@@ -20,16 +20,42 @@ export const listEtimsSubmissions = async (req, res) => {
 export const retryEtimsSubmission = async (req, res) => {
   try {
     const submission = await req.scope(EtimsSubmission).findById(req.params.id);
-    if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+    if (!submission) {
+      return res.status(404).json({ message: "Submission not found" });
+    }
+
+    if (submission.status === "submitted") {
+      return res.status(400).json({
+        message: "This receipt has already been submitted to eTIMS",
+      });
+    }
+
+    if (submission.status === "processing") {
+      return res.status(409).json({
+        message: "This eTIMS submission is already being processed",
+      });
+    }
 
     submission.status = "queued";
     submission.attempts = 0;
     submission.lastError = null;
+    submission.processingStartedAt = null;
+
     await submission.save();
 
-    await agenda.now("submit-etims", { submissionId: submission._id });
-    res.json({ message: "Retry queued", submission });
+    await agenda.now("submit-etims", {
+      submissionId: submission._id,
+    });
+
+    res.json({
+      message: "Retry queued",
+      submission,
+    });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 };

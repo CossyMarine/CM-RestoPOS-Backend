@@ -31,7 +31,7 @@ export { addItemsToReceipt, markReceiptPrinted, applyDiscount } from "./receipt/
 // Loads and decrypts this business's M-Pesa config, or throws a
 // user-facing error if it's missing/disabled — keeps both call sites
 // below from duplicating this logic.
-async function loadMpesaCredentials(req) {
+export async function loadMpesaCredentials(req) {
   const config = await req
     .scope(PaymentConfig)
     .findOne({ provider: "mpesa" })

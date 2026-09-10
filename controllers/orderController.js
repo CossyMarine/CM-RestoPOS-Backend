@@ -6,7 +6,7 @@ import User from "../models/User.js";
 import MenuItem from "../models/MenuItem.js";
 import { generateReceiptForOrder } from "../utils/generateReceipt.js";
 import { getKenyanDayBounds } from "../utils/dateHelpers.js";
-
+import mongoose from "mongoose";
 // @desc    Create a new order and receipt (staff/manual entry)
 // @route   POST /api/orders
 // @access  Protected — cashier, manager, admin, waiter
@@ -21,99 +21,173 @@ export const createOrder = async (req, res) => {
     return res.status(400).json({ message: "Order must have at least one item" });
   }
 
+  const session = await mongoose.startSession();
+
   try {
-    // Retry safety: if this exact submit-attempt already succeeded (client
-    // resent after losing the response, not the request), return the
-    // existing order instead of creating a second one.
-    if (clientRequestId) {
-      const existing = await Order.findOne({ businessId, clientRequestId });
-      if (existing) {
-        const receipt = await Receipt.findOne({ businessId, order: existing._id });
-        return res.status(200).json({ order: existing, receipt, items: existing.items, deduped: true });
-      }
-    }
+    let result;
 
-    // Any line referencing a real menu item must use that item's real price —
-    // client-supplied price is only trusted for genuinely off-menu/manual
-    // lines (no menuItemId), which the data model explicitly supports.
-    const menuItemIds = items.map((i) => i.menuItemId || i._id).filter(Boolean);
-    const menuItems = menuItemIds.length
-      ? await MenuItem.find({ _id: { $in: menuItemIds }, businessId })
-      : [];
-    const menuItemsById = new Map(menuItems.map((m) => [String(m._id), m]));
+    await session.withTransaction(async () => {
+      // A response may have been lost after a successful commit. Return the
+      // prior order and repair a legacy/orphaned receipt if one is absent.
+      if (clientRequestId) {
+        const existingOrder = await Order.findOne({
+          businessId,
+          clientRequestId,
+        }).session(session);
 
-    const itemsWithSnapshot = items.map((i) => {
-      const menuItemId = i.menuItemId || i._id || null;
-      const quantity = Number(i.quantity);
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error(`Invalid quantity for ${i.mealName || "an item"}`);
-      }
+        if (existingOrder) {
+          let existingReceipt = await Receipt.findOne({
+            businessId,
+            order: existingOrder._id,
+          }).session(session);
 
-      if (menuItemId) {
-        const menuItem = menuItemsById.get(String(menuItemId));
-        if (!menuItem) {
-          throw new Error(`Menu item not found: ${menuItemId}`);
+          if (!existingReceipt) {
+            existingReceipt = await generateReceiptForOrder(existingOrder, {
+              session,
+            });
+          }
+
+          result = {
+            order: existingOrder,
+            receipt: existingReceipt,
+            deduped: true,
+          };
+
+          return;
         }
+      }
+
+      const menuItemIds = items
+        .map((item) => item.menuItemId || item._id)
+        .filter(Boolean);
+
+      const menuItems = menuItemIds.length
+        ? await MenuItem.find({
+            _id: { $in: menuItemIds },
+            businessId,
+          }).session(session)
+        : [];
+
+      const menuItemsById = new Map(
+        menuItems.map((item) => [String(item._id), item])
+      );
+
+      const itemsWithSnapshot = items.map((item) => {
+        const menuItemId = item.menuItemId || item._id || null;
+        const quantity = Number(item.quantity);
+
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new Error(`Invalid quantity for ${item.mealName || "an item"}`);
+        }
+
+        if (menuItemId) {
+          const menuItem = menuItemsById.get(String(menuItemId));
+
+          if (!menuItem) {
+            throw new Error(`Menu item not found: ${menuItemId}`);
+          }
+
+          return {
+            menuItemId: menuItem._id,
+            mealName: menuItem.name,
+            imageUrl: menuItem.imageUrl || null,
+            quantity,
+            unitPrice: menuItem.price,
+            lineTotal: Number((menuItem.price * quantity).toFixed(2)),
+            ready: false,
+          };
+        }
+
+        const unitPrice = Number(item.unitPrice);
+
+        if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+          throw new Error(`Invalid price for ${item.mealName || "a manual item"}`);
+        }
+
         return {
-          menuItemId: menuItem._id,
-          mealName: menuItem.name,
-          imageUrl: menuItem.imageUrl || null,
+          menuItemId: null,
+          mealName: item.mealName,
+          imageUrl: item.imageUrl || null,
           quantity,
-          unitPrice: menuItem.price,
-          lineTotal: Number((menuItem.price * quantity).toFixed(2)),
+          unitPrice,
+          lineTotal: Number((unitPrice * quantity).toFixed(2)),
           ready: false,
         };
-      }
+      });
 
-      // Explicit manual/off-menu line — no catalog item to check against.
-      const unitPrice = Number(i.unitPrice);
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-        throw new Error(`Invalid price for ${i.mealName || "a manual item"}`);
-      }
-      return {
-        menuItemId: null,
-        mealName: i.mealName,
-        imageUrl: i.imageUrl || null,
-        quantity,
-        unitPrice,
-        lineTotal: Number((unitPrice * quantity).toFixed(2)),
-        ready: false,
+      const subtotal = Number(
+        itemsWithSnapshot
+          .reduce((sum, item) => sum + item.lineTotal, 0)
+          .toFixed(2)
+      );
+
+      const order = new Order({
+        businessId,
+        tableNumber,
+        waiterName,
+        items: itemsWithSnapshot,
+        subtotal,
+        source: "staff",
+        status: "serving",
+        clientRequestId: clientRequestId || null,
+      });
+
+      await order.save({ session });
+
+      const receipt = await generateReceiptForOrder(order, { session });
+
+      result = {
+        order,
+        receipt,
+        deduped: false,
       };
     });
 
-    const subtotal = Number(itemsWithSnapshot.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
-
-    // Staff-entered orders already have a waiter attached, so they go
-    // straight into the kitchen queue instead of waiting on "pending".
-    const order = await Order.create({
-      businessId,
-      tableNumber,
-      waiterName,
-      items: itemsWithSnapshot,
-      subtotal,
-      source: "staff",
-      status: "serving",
-      clientRequestId: clientRequestId || null,
-    });
-
-    const receipt = await generateReceiptForOrder(order);
-
     const io = req.app.get("io");
-    io.emit("order:created", { order, receipt, source: "staff" });
 
-    res.status(201).json({ order, receipt, items: order.items });
+    if (!result.deduped) {
+      io.emit("order:created", {
+        order: result.order,
+        receipt: result.receipt,
+        source: "staff",
+      });
+    }
+
+    return res.status(result.deduped ? 200 : 201).json({
+      order: result.order,
+      receipt: result.receipt,
+      items: result.order.items,
+      deduped: result.deduped,
+    });
   } catch (error) {
-    // Race: two near-simultaneous retries both passed the findOne check
-    // above before either finished writing. The unique index catches what
-    // the check missed — treat it the same way, not as a real error.
+    // A concurrent request can hit the Order unique index. Resolve it to
+    // the already-created sale rather than producing a duplicate/error.
     if (error.code === 11000 && clientRequestId) {
-      const existing = await Order.findOne({ businessId, clientRequestId });
-      if (existing) {
-        const receipt = await Receipt.findOne({ businessId, order: existing._id });
-        return res.status(200).json({ order: existing, receipt, items: existing.items, deduped: true });
+      const existingOrder = await Order.findOne({ businessId, clientRequestId });
+      const existingReceipt = existingOrder
+        ? await Receipt.findOne({
+            businessId,
+            order: existingOrder._id,
+          })
+        : null;
+
+      if (existingOrder && existingReceipt) {
+        return res.status(200).json({
+          order: existingOrder,
+          receipt: existingReceipt,
+          items: existingOrder.items,
+          deduped: true,
+        });
       }
     }
-    res.status(500).json({ message: error.message || "Failed to create order" });
+
+    console.error("Error creating order:", error.message);
+
+    return res.status(500).json({
+      message: error.message || "Failed to create order",
+    });
+  } finally {
+    await session.endSession();
   }
 };
 

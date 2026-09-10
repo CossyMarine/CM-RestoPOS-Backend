@@ -5,6 +5,7 @@ import MenuItem from "../models/MenuItem.js";
 import AdminSettings from "../models/AdminSettings.js";
 import { stkPush } from "../utils/mpesa.js";
 import { applyPaymentToReceipt, applyRewardRedemption , findCustomerByIdentifier} from "../utils/walletPayments.js";
+import { loadMpesaCredentials } from "./receiptController.js";
 
 const attachMenuImages = async (items, businessId) => {
   const names = items.map((i) => i.mealName);
@@ -223,11 +224,18 @@ export const payWithStk = async (req, res) => {
       return res.status(400).json({ message: `Amount exceeds the balance due (KES ${balanceDue})` });
     }
 
+    // Load this business's own M-Pesa credentials instead of calling
+    // stkPush with none — this was previously calling Daraja with no
+    // shortcode/consumerKey/consumerSecret/passkey at all, which meant
+    // every wallet STK payment attempt was silently doomed to fail.
+    const credentials = await loadMpesaCredentials(req);
+
     const stkRes = await stkPush({
       phone,
       amount: amt,
       accountRef: receipt.billId,
       description: `Bill ${receipt.billId}`,
+      ...credentials,
     });
 
     if (String(stkRes.ResponseCode) !== "0") {
@@ -255,7 +263,7 @@ export const payWithStk = async (req, res) => {
     });
   } catch (error) {
     console.error("Error initiating wallet STK push:", error.response?.data || error.message);
-    res.status(500).json({
+    res.status(error.status || 500).json({
       message: error.response?.data?.errorMessage || error.message || "Failed to initiate payment",
     });
   }
