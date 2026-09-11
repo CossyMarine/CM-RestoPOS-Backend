@@ -4,6 +4,7 @@ import Receipt from "../models/Receipt.js";
 import Order from "../models/Order.js";
 import AdminSettings from "../models/AdminSettings.js";
 import PaymentConfig from "../models/PaymentConfig.js";
+import MpesaPaymentAttempt from "../models/MpesaPaymentAttempt.js";
 import { stkPush, stkQuery } from "../utils/mpesa.js";
 import {
   applyPaymentToReceipt,
@@ -96,7 +97,7 @@ export const payReceipt = async (req, res) => {
       receipt.amountPaid = owed;
       receipt.changeGiven = changeGiven;
       receipt.paidAt = new Date();
-      receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+      await cancelActiveAttemptIfAny(receipt, session);
       receipt.payments.push({
         amount: balanceDue,
         method: "cash",
@@ -145,138 +146,244 @@ export const payReceipt = async (req, res) => {
 // M-PESA (TILL) PAYMENT — STK PUSH
 // ============================================================
 
-// Shared: mark a receipt paid once Daraja confirms success (staff-initiated flow)
-const finalizeMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) => {
-  const cashAmount = receipt.pendingCashAmount || 0;
-  const tillAmount = receipt.pendingTillAmount || 0;
-
-  receipt.status = "paid";
-  receipt.paymentMethod = cashAmount > 0 ? "both" : "mpesa_till";
-  receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
-  receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
- receipt.amountPaid = receipt.totalDue ?? receipt.subtotal;
-  receipt.changeGiven = 0;
-  receipt.paidAt = new Date();
-  receipt.mpesaStatus = "success";
-  receipt.mpesaReceiptNumber = mpesaReceiptNumber || receipt.mpesaReceiptNumber || null;
-  receipt.mpesaResultDesc = "Payment received successfully";
-  if (cashAmount > 0) {
-    receipt.payments.push({ amount: cashAmount, method: "cash", paidAt: new Date() });
-  }
-  receipt.payments.push({
-    amount: tillAmount,
-    method: "mpesa_till",
-    reference: receipt.mpesaReceiptNumber,
-    paidAt: new Date(),
-  });
-
-  // Cashback on the full amount just settled (cash portion + till portion).
-  await creditCashback(receipt, cashAmount + tillAmount);
-
-  await receipt.save();
-
-  // No req here — finalizeMpesaSuccess is shared by the staff-initiated flow
-  // AND the Safaricom webhook/poll path, neither of which can be trusted to
-  // always have req.businessId. The receipt is already a tenant-scoped doc
-  // (it was fetched with businessId or _bypassTenantGuard earlier), so scope
-  // off of it instead.
-  const updatedOrder = await Order.findOneAndUpdate(
-    { _id: receipt.order, businessId: receipt.businessId },
-    { status: "completed" }
+// Called from the cash-based payment paths (payReceipt, payCashAndTill,
+// payCombo) whenever a bill gets settled while an M-Pesa attempt was still
+// mid-flight for it. Marks that attempt "cancelled" rather than leaving it
+// "pending"/"unknown" forever — otherwise a late Daraja callback for it
+// would land on an already-closed bill and (correctly) get refused and
+// flagged for manual reconciliation, which is the right outcome but an
+// avoidable one if we know right now that the bill moved on.
+async function cancelActiveAttemptIfAny(receipt, session = null) {
+  if (!receipt.mpesaActiveAttempt) return;
+  await MpesaPaymentAttempt.updateOne(
+    { _id: receipt.mpesaActiveAttempt, status: { $in: ["pending", "processing", "unknown"] } },
+    { $set: { status: "cancelled", cancelledAt: new Date() } },
+    { session }
   );
-  if (!updatedOrder) {
-    console.warn(
-      `finalizeMpesaSuccess: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${receipt.businessId} — possible cross-tenant data issue`
+  receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+}
+
+// Shared: mark an attempt (and its receipt) paid once Daraja confirms
+// success. Used by the webhook, the manual poll, and the sweep — all of
+// which now go through the SAME atomic claim on the attempt row (see
+// claimAttemptForFinalization below), so this can only ever run once per
+// attempt no matter how many of those three race each other.
+//
+// Runs inside a transaction: the receipt save, the order update, and the
+// attempt's own "succeeded" write all commit together or not at all.
+const finalizeAttemptSuccess = async ({ attempt, mpesaReceiptNumber, resultCode, resultDesc, io }) => {
+  const session = await mongoose.startSession();
+  let outcome;
+  try {
+    await session.withTransaction(async () => {
+      const receipt = await Receipt.findOne({ _id: attempt.receiptId, businessId: attempt.businessId }).session(session);
+
+      // The bill may have already been fully settled by another method
+      // (cash, a different attempt, reward) while this STK prompt was
+      // still out. Never silently re-apply money to an already-closed
+      // bill — record it and surface it for a human instead.
+      if (!receipt || receipt.status === "paid" || receipt.status === "voided") {
+        await MpesaPaymentAttempt.updateOne(
+          { _id: attempt._id },
+          { $set: { status: "succeeded-unapplied", resultCode, resultDesc, mpesaReceiptNumber, resolvedAt: new Date() } },
+          { session }
+        );
+        outcome = { applied: false, receipt: receipt || null };
+        return;
+      }
+
+      if (attempt.source === "wallet") {
+        receipt.mpesaStatus = "success";
+        receipt.mpesaReceiptNumber = mpesaReceiptNumber || receipt.mpesaReceiptNumber || null;
+        receipt.mpesaResultDesc = "Payment received successfully";
+        receipt.pendingTillAmount = 0;
+        receipt.pendingCashAmount = 0;
+
+        const updated = await applyPaymentToReceipt({
+          receipt,
+          amount: attempt.amount,
+          method: "mpesa_stk",
+          reference: receipt.mpesaReceiptNumber,
+          paidBy: attempt.paidBy,
+          session,
+        });
+
+        await MpesaPaymentAttempt.updateOne(
+          { _id: attempt._id },
+          { $set: { status: "succeeded", resultCode, resultDesc, mpesaReceiptNumber, resolvedAt: new Date() } },
+          { session }
+        );
+
+        outcome = { applied: true, receipt: updated };
+      } else {
+        const cashAmount = attempt.cashAmount || 0;
+        const tillAmount = attempt.amount || 0;
+
+        receipt.status = "paid";
+        receipt.paymentMethod = cashAmount > 0 ? "both" : "mpesa_till";
+        receipt.cashAmount = (receipt.cashAmount || 0) + cashAmount;
+        receipt.tillAmount = (receipt.tillAmount || 0) + tillAmount;
+        receipt.amountPaid = receipt.totalDue ?? receipt.subtotal;
+        receipt.changeGiven = 0;
+        receipt.paidAt = new Date();
+        receipt.mpesaStatus = "success";
+        receipt.mpesaReceiptNumber = mpesaReceiptNumber || receipt.mpesaReceiptNumber || null;
+        receipt.mpesaResultDesc = "Payment received successfully";
+        if (cashAmount > 0) {
+          receipt.payments.push({ amount: cashAmount, method: "cash", paidAt: new Date() });
+        }
+        receipt.payments.push({
+          amount: tillAmount,
+          method: "mpesa_till",
+          reference: receipt.mpesaReceiptNumber,
+          paidAt: new Date(),
+        });
+
+        await creditCashback(receipt, cashAmount + tillAmount, session);
+        await receipt.save({ session });
+
+        const updatedOrder = await Order.findOneAndUpdate(
+          { _id: receipt.order, businessId: receipt.businessId },
+          { status: "completed" },
+          { session }
+        );
+        if (!updatedOrder) {
+          console.warn(
+            `finalizeAttemptSuccess: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${receipt.businessId} — possible cross-tenant data issue`
+          );
+        }
+
+        await MpesaPaymentAttempt.updateOne(
+          { _id: attempt._id },
+          { $set: { status: "succeeded", resultCode, resultDesc, mpesaReceiptNumber, resolvedAt: new Date() } },
+          { session }
+        );
+
+        outcome = { applied: true, receipt };
+      }
+    });
+  } finally {
+    session.endSession();
+  }
+
+  if (!outcome.applied) {
+    console.error(
+      `⚠️ MANUAL RECONCILIATION NEEDED: M-Pesa attempt ${attempt._id} succeeded (receipt# ${mpesaReceiptNumber}) but its bill ${attempt.receiptId} is ${outcome.receipt ? `already "${outcome.receipt.status}"` : "missing"} — payment was NOT applied. Check whether the customer was charged and reconcile manually.`
     );
+    if (io) {
+      io.emit("mpesa:result", { checkoutRequestId: attempt.checkoutRequestId, status: "succeeded-unapplied", attemptId: attempt._id });
+    }
+    return;
   }
 
-  io.emit("receipt:paid", receipt);
-  io.emit("mpesa:result", {
-    checkoutRequestId: receipt.mpesaCheckoutRequestId,
-    status: "success",
-    receipt,
-  });
+  const { receipt } = outcome;
+  if (io) {
+    io.emit("receipt:updated", receipt);
+    if (receipt.status === "paid") io.emit("receipt:paid", receipt);
+    io.emit("mpesa:result", { checkoutRequestId: attempt.checkoutRequestId, status: "success", receipt });
+  }
 };
 
-// Shared: apply a wallet-initiated STK push once Daraja confirms success —
-// goes through applyPaymentToReceipt so partial payments and cashback work
-const finalizeWalletMpesaSuccess = async ({ receipt, mpesaReceiptNumber, io }) => {
-  const amount = receipt.pendingTillAmount || 0;
-  const paidBy = receipt.pendingPaidBy;
+const finalizeAttemptFailure = async ({ attempt, resultCode, resultDesc, io }) => {
+  await MpesaPaymentAttempt.updateOne(
+    { _id: attempt._id },
+    { $set: { status: "failed", resultCode: resultCode ?? null, resultDesc, resolvedAt: new Date() } }
+  );
 
-  receipt.mpesaStatus = "success";
-  receipt.mpesaReceiptNumber = mpesaReceiptNumber || receipt.mpesaReceiptNumber || null;
-  receipt.mpesaResultDesc = "Payment received successfully";
-  receipt.pendingTillAmount = 0;
-  receipt.pendingCashAmount = 0;
-
-  const updated = await applyPaymentToReceipt({
-    receipt,
-    amount,
-    method: "mpesa_stk",
-    reference: receipt.mpesaReceiptNumber,
-    paidBy,
-  });
-
-  io.emit("receipt:updated", updated);
-  if (updated.status === "paid") io.emit("receipt:paid", updated);
-
-  io.emit("mpesa:result", {
-    checkoutRequestId: updated.mpesaCheckoutRequestId,
-    status: "success",
-    receipt: updated,
-  });
-};
-
-const finalizeMpesaFailure = async ({ receipt, resultDesc, io }) => {
-  receipt.mpesaStatus = "failed";
-  receipt.mpesaResultDesc = resultDesc || "Payment was not completed";
-  await receipt.save();
-
-  io.emit("mpesa:result", {
-    checkoutRequestId: receipt.mpesaCheckoutRequestId,
-    status: "failed",
-    message: receipt.mpesaResultDesc,
-  });
-};
-
-// @desc    Trigger an STK push ("Prompt"). cashAmount = 0 for prompt-only, or
-//          a partial amount for a split "both" payment (prompt covers the rest).
-// @route   POST /api/receipts/:id/mpesa/initiate
-// @access  Protected — admin
-// @desc    Trigger an STK push ("Prompt"). cashAmount = 0 for prompt-only, or
-//          a partial amount for a split "both" payment (prompt covers the rest).
-// @route   POST /api/receipts/:id/mpesa/initiate
-// @access  Protected — admin
-// Atomically claims a pending receipt for processing. Returns the claimed
-// receipt, or null if it was already claimed/settled by a concurrent
-// callback, poll, or sweep. This single operation is what makes duplicate
-// Safaricom callbacks — and races between the webhook and a manual status
-// check — safe to happen simultaneously without double-processing.
-async function claimPendingReceipt({ checkoutRequestId, businessId }) {
-  const filter = { mpesaCheckoutRequestId: checkoutRequestId, mpesaStatus: "pending" };
-  if (businessId) {
-    filter.businessId = businessId;
-  } else {
-    filter._bypassTenantGuard = true; // public webhook — businessId not known yet
+  const receipt = await Receipt.findOne({ _id: attempt.receiptId, businessId: attempt.businessId });
+  // Only touch the receipt's cached fields if it's still pointing at THIS
+  // attempt — if it's since moved on to a newer attempt, leave it alone.
+  if (receipt && String(receipt.mpesaActiveAttempt) === String(attempt._id)) {
+    receipt.mpesaStatus = "failed";
+    receipt.mpesaResultDesc = resultDesc || "Payment was not completed";
+    await receipt.save();
   }
 
-  return Receipt.findOneAndUpdate(filter, { $set: { mpesaStatus: "processing" } }, { new: true });
+  if (io) {
+    io.emit("mpesa:result", {
+      checkoutRequestId: attempt.checkoutRequestId,
+      status: "failed",
+      message: resultDesc,
+    });
+  }
+};
+
+// Atomically claims a pending/unknown attempt for finalization. Returns the
+// claimed attempt, or null if it was already claimed/settled by a
+// concurrent callback, poll, or sweep — or if it was cancelled (handled
+// separately, see handleUnclaimedCallback). This single operation is what
+// makes duplicate Safaricom callbacks, and races between the webhook and a
+// manual status check, safe to happen simultaneously without
+// double-processing.
+//
+// "unknown" is claimable on purpose: that's the state an attempt is left in
+// when we couldn't tell whether our STK request actually reached Daraja
+// (timeout/network error at initiation). A late callback or a manual
+// reconciliation query for that same checkoutRequestId is exactly what
+// resolves that ambiguity — it should NOT be locked out just because we
+// were unsure at the time.
+async function claimAttemptForFinalization(checkoutRequestId) {
+  return MpesaPaymentAttempt.findOneAndUpdate(
+    { checkoutRequestId, status: { $in: ["pending", "unknown"] }, _bypassTenantGuard: true },
+    { $set: { status: "processing", processingStartedAt: new Date() } },
+    { new: true }
+  );
 }
 
 // If something fails after claiming but before we finalize, release the
 // claim back to "pending" so a later poll or sweep can retry it — otherwise
 // it's stuck in "processing" forever.
-async function releaseClaim(receipt) {
+async function releaseAttemptClaim(attempt) {
   try {
-    await Receipt.updateOne(
-      { _id: receipt._id, mpesaStatus: "processing" },
-      { $set: { mpesaStatus: "pending" } }
+    await MpesaPaymentAttempt.updateOne(
+      { _id: attempt._id, status: "processing" },
+      { $set: { status: "pending" } }
     );
   } catch (err) {
-    console.error("Failed to release M-Pesa processing claim:", err.message);
+    console.error("Failed to release M-Pesa attempt processing claim:", err.message);
   }
 }
+
+// Called when claimAttemptForFinalization finds nothing claimable. Distinguishes
+// three cases: a genuinely unknown checkoutRequestId (nothing we ever created),
+// a duplicate delivery for an attempt that's already resolved (correct to
+// no-op), and — the important one — a callback landing on an attempt the
+// cashier already cancelled. That last case means Safaricom is reporting a
+// charge for a payment staff believe never happened; it must never be
+// silently dropped OR silently auto-applied, so it's recorded as
+// "succeeded-unapplied" and logged loudly for a human to check.
+async function handleUnclaimedCallback({ checkoutRequestId, resultCode, resultDesc, mpesaReceiptNumber }) {
+  const existing = await MpesaPaymentAttempt.findOne({ checkoutRequestId, _bypassTenantGuard: true });
+  if (!existing) {
+    console.warn(`M-Pesa callback for a totally unknown checkoutRequestId ${checkoutRequestId} — ResultCode ${resultCode}`);
+    return;
+  }
+
+  if (existing.status === "cancelled" && Number(resultCode) === 0) {
+    await MpesaPaymentAttempt.updateOne(
+      { _id: existing._id },
+      {
+        $set: {
+          status: "succeeded-unapplied",
+          resultCode: Number(resultCode),
+          resultDesc,
+          mpesaReceiptNumber,
+          resolvedAt: new Date(),
+        },
+      }
+    );
+    console.error(
+      `⚠️ MANUAL RECONCILIATION NEEDED: M-Pesa attempt ${existing._id} (receipt ${existing.receiptId}) was cancelled by staff but Safaricom reports it SUCCEEDED (receipt# ${mpesaReceiptNumber}). Payment was NOT applied — check whether the customer was charged and reconcile manually.`
+    );
+    return;
+  }
+
+  console.warn(`M-Pesa callback ignored for attempt ${existing._id} — status is already "${existing.status}"`);
+}
+// @desc    Trigger an STK push ("Prompt"). cashAmount = 0 for prompt-only, or
+//          a partial amount for a split "both" payment (prompt covers the rest).
+// @route   POST /api/receipts/:id/mpesa/initiate
+// @access  Protected — admin
 export const initiateMpesaPayment = async (req, res) => {
   const { id } = req.params;
   let { phone, cashAmount } = req.body;
@@ -315,22 +422,70 @@ export const initiateMpesaPayment = async (req, res) => {
 
     const tillAmount = Number((balanceDue - cashAmount).toFixed(2));
 
-    // NEW — load this business's own M-Pesa credentials instead of global env vars
     const credentials = await loadMpesaCredentials(req);
 
-    const stkRes = await stkPush({
+    // Durable record created BEFORE calling Daraja. If the request times
+    // out after Daraja actually received it, this row (left in "unknown"
+    // below) is what lets a later callback or reconciliation still find
+    // and resolve it — instead of the payment becoming permanently
+    // untraceable, matched to nothing.
+    const attempt = await MpesaPaymentAttempt.create({
+      businessId,
+      receiptId: receipt._id,
+      source: "staff",
       phone,
       amount: tillAmount,
-      accountRef: receipt.billId,
-      description: `Bill ${receipt.billId}`,
-      ...credentials,
+      cashAmount,
+      paidBy: req.user?._id || null,
+      status: "initiating",
     });
 
+    let stkRes;
+    try {
+      stkRes = await stkPush({
+        phone,
+        amount: tillAmount,
+        accountRef: receipt.billId,
+        description: `Bill ${receipt.billId}`,
+        ...credentials,
+      });
+    } catch (stkErr) {
+      // We genuinely don't know whether Daraja received this — never
+      // treat a network/timeout error the same as a clean rejection.
+      await MpesaPaymentAttempt.updateOne(
+        { _id: attempt._id },
+        { $set: { status: "unknown", initiationError: stkErr.message } }
+      );
+      throw stkErr;
+    }
+
     if (String(stkRes.ResponseCode) !== "0") {
+      await MpesaPaymentAttempt.updateOne(
+        { _id: attempt._id },
+        {
+          $set: {
+            status: "failed",
+            initiationError: stkRes.ResponseDescription || "Rejected by Daraja",
+            resolvedAt: new Date(),
+          },
+        }
+      );
       return res.status(400).json({
         message: stkRes.ResponseDescription || "Failed to initiate M-Pesa payment",
       });
     }
+
+    await MpesaPaymentAttempt.updateOne(
+      { _id: attempt._id },
+      {
+        $set: {
+          status: "pending",
+          checkoutRequestId: stkRes.CheckoutRequestID,
+          merchantRequestId: stkRes.MerchantRequestID,
+          initiatedAt: new Date(),
+        },
+      }
+    );
 
     receipt.mpesaSource = "staff";
     receipt.mpesaPhone = phone;
@@ -341,7 +496,8 @@ export const initiateMpesaPayment = async (req, res) => {
     receipt.mpesaReceiptNumber = null;
     receipt.pendingCashAmount = cashAmount;
     receipt.pendingTillAmount = tillAmount;
-    receipt.mpesaInitiatedAt = new Date()
+    receipt.mpesaInitiatedAt = new Date();
+    receipt.mpesaActiveAttempt = attempt._id;
     await receipt.save();
 
     const io = req.app.get("io");
@@ -369,7 +525,7 @@ export const initiateMpesaPayment = async (req, res) => {
 export const mpesaCallback = async (req, res) => {
   res.status(200).json({ message: "Callback received" }); // ack immediately regardless of outcome
 
-  let receipt;
+  let attempt;
   try {
     const callback = req.body?.Body?.stkCallback;
     if (!callback) return;
@@ -377,28 +533,25 @@ export const mpesaCallback = async (req, res) => {
     const { CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = callback;
     if (!CheckoutRequestID) return;
 
-    receipt = await claimPendingReceipt({ checkoutRequestId: CheckoutRequestID });
-    if (!receipt) {
-      console.warn(`M-Pesa callback ignored — no pending receipt (already processed/unknown) for ${CheckoutRequestID}`);
-      return; // duplicate delivery, or a poll/sweep already won the race — correct to no-op
+    const items = CallbackMetadata?.Item || [];
+    const mpesaReceiptNumber = items.find((i) => i.Name === "MpesaReceiptNumber")?.Value || null;
+
+    attempt = await claimAttemptForFinalization(CheckoutRequestID);
+    if (!attempt) {
+      await handleUnclaimedCallback({ checkoutRequestId: CheckoutRequestID, resultCode: ResultCode, resultDesc: ResultDesc, mpesaReceiptNumber });
+      return;
     }
 
     const io = req.app.get("io");
 
     if (Number(ResultCode) === 0) {
-      const items = CallbackMetadata?.Item || [];
-      const mpesaReceiptNumber = items.find((i) => i.Name === "MpesaReceiptNumber")?.Value || null;
-      if (receipt.mpesaSource === "wallet") {
-        await finalizeWalletMpesaSuccess({ receipt, mpesaReceiptNumber, io });
-      } else {
-        await finalizeMpesaSuccess({ receipt, mpesaReceiptNumber, io });
-      }
+      await finalizeAttemptSuccess({ attempt, mpesaReceiptNumber, resultCode: Number(ResultCode), resultDesc: ResultDesc, io });
     } else {
-      await finalizeMpesaFailure({ receipt, resultDesc: ResultDesc, io });
+      await finalizeAttemptFailure({ attempt, resultCode: Number(ResultCode), resultDesc: ResultDesc, io });
     }
   } catch (error) {
     console.error("M-Pesa callback error:", error.message);
-    if (receipt) await releaseClaim(receipt);
+    if (attempt) await releaseAttemptClaim(attempt);
   }
 };
 
@@ -421,31 +574,32 @@ export const getMpesaStatus = async (req, res) => {
       return res.json({ status, receipt });
     }
 
-    const claimed = await claimPendingReceipt({ checkoutRequestId: receipt.mpesaCheckoutRequestId, businessId });
-    if (!claimed) return res.json({ status: "pending", receipt, note: "Reconciliation already in progress" });
+    const attempt = await claimAttemptForFinalization(receipt.mpesaCheckoutRequestId);
+    if (!attempt) return res.json({ status: "pending", receipt, note: "Reconciliation already in progress" });
 
     const io = req.app.get("io");
     try {
       const credentials = await loadMpesaCredentials(req);
-      const queryRes = await stkQuery({ checkoutRequestId: claimed.mpesaCheckoutRequestId, ...credentials });
+      const queryRes = await stkQuery({ checkoutRequestId: attempt.checkoutRequestId, ...credentials });
       const resultCode = Number(queryRes.ResultCode);
 
       if (resultCode === 0) {
-        const finalize = claimed.mpesaSource === "wallet" ? finalizeWalletMpesaSuccess : finalizeMpesaSuccess;
-        await finalize({ receipt: claimed, mpesaReceiptNumber: null, io });
-        return res.json({ status: "success", receipt: claimed });
+        await finalizeAttemptSuccess({ attempt, mpesaReceiptNumber: null, resultCode, resultDesc: queryRes.ResultDesc, io });
+        const updated = await Receipt.findOne({ _id: receipt._id, businessId });
+        return res.json({ status: "success", receipt: updated });
       }
       if (!isNaN(resultCode)) {
-        await finalizeMpesaFailure({ receipt: claimed, resultDesc: queryRes.ResultDesc, io });
-        return res.json({ status: "failed", message: queryRes.ResultDesc, receipt: claimed });
+        await finalizeAttemptFailure({ attempt, resultCode, resultDesc: queryRes.ResultDesc, io });
+        const updated = await Receipt.findOne({ _id: receipt._id, businessId });
+        return res.json({ status: "failed", message: queryRes.ResultDesc, receipt: updated });
       }
-      await releaseClaim(claimed);
+      await releaseAttemptClaim(attempt);
     } catch (queryErr) {
       console.warn("M-Pesa status query still pending:", queryErr.response?.data || queryErr.message);
-      await releaseClaim(claimed);
+      await releaseAttemptClaim(attempt);
     }
 
-    res.json({ status: "pending", receipt: claimed });
+    res.json({ status: "pending", receipt });
   } catch (error) {
     console.error("Error checking M-Pesa status:", error.message);
     res.status(500).json({ message: "Failed to check payment status" });
@@ -455,18 +609,33 @@ export const getMpesaStatus = async (req, res) => {
 // @desc    Cancel a pending STK push so the cashier can retry or switch method
 // @route   POST /api/receipts/:id/mpesa/cancel
 // @access  Protected — admin
+// @desc    Cancel a pending STK push so the cashier can retry or switch method.
+//          Does NOT destroy the attempt's checkoutRequestId — if Safaricom
+//          later delivers a success for it anyway, that has to be caught
+//          and flagged for manual reconciliation, not silently lost.
+// @route   POST /api/receipts/:id/mpesa/cancel
+// @access  Protected — admin
 export const cancelMpesaPayment = async (req, res) => {
   const { businessId } = req;
   try {
     const receipt = await Receipt.findOne({ _id: req.params.id, businessId });
     if (!receipt) return res.status(404).json({ message: "Receipt not found" });
 
+    if (receipt.mpesaActiveAttempt) {
+      await MpesaPaymentAttempt.updateOne(
+        { _id: receipt.mpesaActiveAttempt, status: { $in: ["pending", "processing", "unknown"] } },
+        { $set: { status: "cancelled", cancelledAt: new Date() } }
+      );
+    }
+
     receipt.mpesaStatus = "idle";
-    receipt.mpesaCheckoutRequestId = null;
-    receipt.mpesaMerchantRequestId = null;
     receipt.mpesaResultDesc = null;
     receipt.pendingCashAmount = 0;
     receipt.pendingTillAmount = 0;
+    // mpesaCheckoutRequestId / mpesaMerchantRequestId are deliberately left
+    // as-is on the receipt (a display/history cache) — the attempt itself,
+    // not this field, is what a late callback matches against, and the
+    // attempt's own checkoutRequestId was never touched above.
     await receipt.save();
 
     res.json({ message: "Cancelled", receipt });
@@ -529,7 +698,7 @@ export const payCashAndTill = async (req, res) => {
       receipt.amountPaid = owed;
       receipt.changeGiven = 0;
       receipt.paidAt = new Date();
-      receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
+      await cancelActiveAttemptIfAny(receipt, session);
       receipt.payments.push(
         { amount: cashAmount, method: "cash", paidBy: req.user?._id || null, paidAt: new Date() },
         { amount: tillAmount, method: "manual_till", paidBy: req.user?._id || null, paidAt: new Date() }
@@ -627,6 +796,11 @@ export const payCombo = async (req, res) => {
         throw err;
       }
 
+      // Any payment applied here supersedes an in-flight M-Pesa attempt on
+      // this bill, regardless of which combination of legs below actually
+      // runs — cancel it once, up front.
+      await cancelActiveAttemptIfAny(receipt, session);
+
       // ---- Reward leg first — needs the customer's own points balance ----
       if (rewardAmount > 0) {
         if (!rewardIdentifier || !rewardIdentifier.trim()) {
@@ -671,7 +845,6 @@ export const payCombo = async (req, res) => {
         receipt.paymentMethod = receipt.payments.length > 1 ? "both" : cashAmount > 0 ? "cash" : "manual_till";
         receipt.status = totalPaid >= owed ? "paid" : "partial";
         if (receipt.status === "paid") receipt.paidAt = new Date();
-        receipt.mpesaStatus = receipt.mpesaStatus === "pending" ? "idle" : receipt.mpesaStatus;
         await receipt.save({ session });
       }
 
@@ -722,34 +895,36 @@ const STALE_PENDING_MINUTES = 3;
 export async function sweepStalePendingMpesaPayments(io) {
   const cutoff = new Date(Date.now() - STALE_PENDING_MINUTES * 60 * 1000);
 
-  const staleReceipts = await Receipt.find({
-    mpesaStatus: "pending",
-    mpesaInitiatedAt: { $lte: cutoff },
+  // "unknown" is included deliberately — that's the state left behind when
+  // we couldn't tell whether an STK request reached Daraja at all. If it
+  // did, and Daraja actually issued a checkoutRequestId, stkQuery below can
+  // still resolve it even though our own initiation response was lost.
+  const staleAttempts = await MpesaPaymentAttempt.find({
+    status: { $in: ["pending", "unknown"] },
+    checkoutRequestId: { $type: "string" },
+    createdAt: { $lte: cutoff },
     _bypassTenantGuard: true, // platform-wide sweep, not scoped to one business
   });
 
-  for (const receipt of staleReceipts) {
-    const claimed = await claimPendingReceipt({
-      checkoutRequestId: receipt.mpesaCheckoutRequestId,
-      businessId: receipt.businessId,
-    });
+  for (const attempt of staleAttempts) {
+    const claimed = await claimAttemptForFinalization(attempt.checkoutRequestId);
     if (!claimed) continue; // already handled elsewhere in the meantime
 
     try {
       const config = await PaymentConfig.findOne({
-        businessId: receipt.businessId,
+        businessId: claimed.businessId,
         provider: "mpesa",
         _bypassTenantGuard: true,
       }).select("+consumerKey +consumerSecret +passkey");
 
       if (!config || !config.enabled) {
-        await releaseClaim(claimed);
+        await releaseAttemptClaim(claimed);
         continue;
       }
       const { consumerKey, consumerSecret, passkey } = config.getDecryptedCredentials();
 
       const queryRes = await stkQuery({
-        checkoutRequestId: claimed.mpesaCheckoutRequestId,
+        checkoutRequestId: claimed.checkoutRequestId,
         shortcode: config.shortcode,
         consumerKey,
         consumerSecret,
@@ -759,59 +934,87 @@ export async function sweepStalePendingMpesaPayments(io) {
       const resultCode = Number(queryRes.ResultCode);
 
       if (resultCode === 0) {
-        const finalize = claimed.mpesaSource === "wallet" ? finalizeWalletMpesaSuccess : finalizeMpesaSuccess;
-        await finalize({ receipt: claimed, mpesaReceiptNumber: null, io });
+        await finalizeAttemptSuccess({ attempt: claimed, mpesaReceiptNumber: null, resultCode, resultDesc: queryRes.ResultDesc, io });
       } else if (!isNaN(resultCode)) {
-        await finalizeMpesaFailure({ receipt: claimed, resultDesc: queryRes.ResultDesc, io });
+        await finalizeAttemptFailure({ attempt: claimed, resultCode, resultDesc: queryRes.ResultDesc, io });
       } else {
-        await releaseClaim(claimed);
+        await releaseAttemptClaim(claimed);
       }
     } catch (err) {
-      console.warn(`Sweep: still unresolved for ${claimed.mpesaCheckoutRequestId}:`, err.message);
-      await releaseClaim(claimed);
+      console.warn(`Sweep: still unresolved for ${claimed.checkoutRequestId}:`, err.message);
+      await releaseAttemptClaim(claimed);
     }
   }
+
+  // Attempts that never even got a checkoutRequestId back from Daraja (the
+  // initiation request itself errored/timed out before a response arrived)
+  // can't be resolved by querying Daraja — there's no ID to query with.
+  // These need a human, not a retry loop; at minimum, surface them.
+  const untraceable = await MpesaPaymentAttempt.find({
+    status: "unknown",
+    checkoutRequestId: null,
+    createdAt: { $lte: cutoff },
+    _bypassTenantGuard: true,
+  }).select("_id receiptId businessId createdAt initiationError");
+
+  untraceable.forEach((a) => {
+    console.error(
+      `⚠️ MANUAL REVIEW NEEDED: M-Pesa attempt ${a._id} (receipt ${a.receiptId}, business ${a.businessId}) never received a checkoutRequestId from Daraja (${a.initiationError || "no error recorded"}) and can't be auto-reconciled — check with the customer/Safaricom directly.`
+    );
+  });
 }
-// @desc    Force-reconcile every currently-pending M-Pesa receipt for this
-//          business — same query-and-finalize path as the automatic sweep.
+// @desc    Force-reconcile every currently-pending/unknown M-Pesa attempt for
+//          this business — same query-and-finalize path as the automatic sweep.
 // @route   POST /api/receipts/mpesa/reconcile
 // @access  Protected — admin
 export const reconcilePendingMpesaPayments = async (req, res) => {
   const { businessId } = req;
   try {
-    const staleReceipts = await Receipt.find({ businessId, mpesaStatus: "pending" });
+    const staleAttempts = await MpesaPaymentAttempt.find({
+      businessId,
+      status: { $in: ["pending", "unknown"] },
+      checkoutRequestId: { $type: "string" },
+    });
     const io = req.app.get("io");
     const results = [];
 
-    for (const receipt of staleReceipts) {
-      const claimed = await claimPendingReceipt({ checkoutRequestId: receipt.mpesaCheckoutRequestId, businessId });
+    for (const attempt of staleAttempts) {
+      const claimed = await claimAttemptForFinalization(attempt.checkoutRequestId);
       if (!claimed) {
-        results.push({ receiptId: receipt._id, outcome: "skipped-in-progress" });
+        results.push({ attemptId: attempt._id, receiptId: attempt.receiptId, outcome: "skipped-in-progress" });
         continue;
       }
       try {
         const credentials = await loadMpesaCredentials(req);
-        const queryRes = await stkQuery({ checkoutRequestId: claimed.mpesaCheckoutRequestId, ...credentials });
+        const queryRes = await stkQuery({ checkoutRequestId: claimed.checkoutRequestId, ...credentials });
         const resultCode = Number(queryRes.ResultCode);
 
         if (resultCode === 0) {
-          const finalize = claimed.mpesaSource === "wallet" ? finalizeWalletMpesaSuccess : finalizeMpesaSuccess;
-          await finalize({ receipt: claimed, mpesaReceiptNumber: null, io });
-          results.push({ receiptId: claimed._id, outcome: "success" });
+          await finalizeAttemptSuccess({ attempt: claimed, mpesaReceiptNumber: null, resultCode, resultDesc: queryRes.ResultDesc, io });
+          results.push({ attemptId: claimed._id, receiptId: claimed.receiptId, outcome: "success" });
         } else if (!isNaN(resultCode)) {
-          await finalizeMpesaFailure({ receipt: claimed, resultDesc: queryRes.ResultDesc, io });
-          results.push({ receiptId: claimed._id, outcome: "failed", message: queryRes.ResultDesc });
+          await finalizeAttemptFailure({ attempt: claimed, resultCode, resultDesc: queryRes.ResultDesc, io });
+          results.push({ attemptId: claimed._id, receiptId: claimed.receiptId, outcome: "failed", message: queryRes.ResultDesc });
         } else {
-          await releaseClaim(claimed);
-          results.push({ receiptId: claimed._id, outcome: "still-pending" });
+          await releaseAttemptClaim(claimed);
+          results.push({ attemptId: claimed._id, receiptId: claimed.receiptId, outcome: "still-pending" });
         }
       } catch (err) {
-        await releaseClaim(claimed);
-        results.push({ receiptId: claimed._id, outcome: "error", message: err.message });
+        await releaseAttemptClaim(claimed);
+        results.push({ attemptId: claimed._id, receiptId: claimed.receiptId, outcome: "error", message: err.message });
       }
     }
 
-    res.json({ message: `Reconciled ${results.length} pending receipt(s)`, results });
+    const untraceable = await MpesaPaymentAttempt.find({
+      businessId,
+      status: "unknown",
+      checkoutRequestId: null,
+    }).select("_id receiptId");
+    untraceable.forEach((a) =>
+      results.push({ attemptId: a._id, receiptId: a.receiptId, outcome: "untraceable-needs-manual-review" })
+    );
+
+    res.json({ message: `Reconciled ${results.length} attempt(s)`, results });
   } catch (error) {
     console.error("Manual M-Pesa reconciliation error:", error.message);
     res.status(500).json({ message: "Reconciliation failed", error: error.message });

@@ -3,9 +3,10 @@ import Receipt from "../models/Receipt.js";
 import User from "../models/User.js";
 import MenuItem from "../models/MenuItem.js";
 import AdminSettings from "../models/AdminSettings.js";
+import MpesaPaymentAttempt from "../models/MpesaPaymentAttempt.js";
 import { stkPush } from "../utils/mpesa.js";
 import { applyPaymentToReceipt, applyRewardRedemption , findCustomerByIdentifier} from "../utils/walletPayments.js";
-import { loadMpesaCredentials } from "./receiptController.js";
+import { loadMpesaCredentials, cancelActiveAttemptIfAny } from "./receiptController.js";
 
 const attachMenuImages = async (items, businessId) => {
   const names = items.map((i) => i.mealName);
@@ -167,6 +168,7 @@ export const payWithManualTill = async (req, res) => {
 
     // Trusted staff entry (Orders ledger "Till" button) — apply immediately.
     if (isStaff) {
+      await cancelActiveAttemptIfAny(receipt);
       const updated = await applyPaymentToReceipt({
         receipt,
         amount: amt,
@@ -230,17 +232,62 @@ export const payWithStk = async (req, res) => {
     // every wallet STK payment attempt was silently doomed to fail.
     const credentials = await loadMpesaCredentials(req);
 
-    const stkRes = await stkPush({
+    // Durable record created BEFORE calling Daraja — see initiateMpesaPayment
+    // in receiptController.js for why. Same reasoning applies to a customer
+    // wallet payment as to a staff one.
+    const attempt = await MpesaPaymentAttempt.create({
+      businessId,
+      receiptId: receipt._id,
+      source: "wallet",
       phone,
       amount: amt,
-      accountRef: receipt.billId,
-      description: `Bill ${receipt.billId}`,
-      ...credentials,
+      cashAmount: 0,
+      paidBy: req.user._id,
+      status: "initiating",
     });
 
+    let stkRes;
+    try {
+      stkRes = await stkPush({
+        phone,
+        amount: amt,
+        accountRef: receipt.billId,
+        description: `Bill ${receipt.billId}`,
+        ...credentials,
+      });
+    } catch (stkErr) {
+      await MpesaPaymentAttempt.updateOne(
+        { _id: attempt._id },
+        { $set: { status: "unknown", initiationError: stkErr.message } }
+      );
+      throw stkErr;
+    }
+
     if (String(stkRes.ResponseCode) !== "0") {
+      await MpesaPaymentAttempt.updateOne(
+        { _id: attempt._id },
+        {
+          $set: {
+            status: "failed",
+            initiationError: stkRes.ResponseDescription || "Rejected by Daraja",
+            resolvedAt: new Date(),
+          },
+        }
+      );
       return res.status(400).json({ message: stkRes.ResponseDescription || "Failed to initiate M-Pesa payment" });
     }
+
+    await MpesaPaymentAttempt.updateOne(
+      { _id: attempt._id },
+      {
+        $set: {
+          status: "pending",
+          checkoutRequestId: stkRes.CheckoutRequestID,
+          merchantRequestId: stkRes.MerchantRequestID,
+          initiatedAt: new Date(),
+        },
+      }
+    );
 
     receipt.mpesaSource = "wallet";
     receipt.mpesaPhone = phone;
@@ -252,6 +299,8 @@ export const payWithStk = async (req, res) => {
     receipt.pendingTillAmount = amt;
     receipt.pendingCashAmount = 0;
     receipt.pendingPaidBy = req.user._id;
+    receipt.mpesaInitiatedAt = new Date();
+    receipt.mpesaActiveAttempt = attempt._id;
     await receipt.save();
 
     const io = req.app.get("io");
@@ -318,6 +367,7 @@ export const payWithReward = async (req, res) => {
     }
 
     const io = req.app.get("io");
+    await cancelActiveAttemptIfAny(receipt);
     const result = await applyRewardRedemption({ receipt, user, pointsToRedeem });
 
     io.emit("receipt:updated", result.receipt);
