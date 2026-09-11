@@ -218,6 +218,21 @@ export const payWithStk = async (req, res) => {
       return res.status(400).json({ message: "This bill is already settled" });
     }
 
+    // Same protection initiateMpesaPayment already has for the staff flow —
+    // a bill can only have one outstanding STK prompt at a time. This blocks
+    // a double-tapped "Pay" button from firing two separate prompts to the
+    // customer's phone. Once the earlier attempt actually resolves (success,
+    // failure, or a staff cancel), mpesaStatus moves off "pending" and a
+    // genuine retry is allowed again — this only ever blocks a second
+    // request while one is still live.
+    if (receipt.mpesaStatus === "pending" && receipt.mpesaCheckoutRequestId) {
+      return res.status(409).json({
+        message: "A payment prompt was already sent for this bill and is still waiting on a response — check your phone.",
+        alreadyPending: true,
+        receipt,
+      });
+    }
+
     const amt = parseFloat(amount);
    const owed = receipt.totalDue ?? receipt.subtotal;
  const balanceDue = Number((owed - (receipt.amountPaid || 0)).toFixed(2));

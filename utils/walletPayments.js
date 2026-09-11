@@ -69,7 +69,7 @@ export const creditCashback = async (receipt, amount, session = null) => {
 // actually durable. Every caller is responsible for emitting
 // "receipt:updated"/"receipt:paid" itself, only after this call (and any
 // surrounding transaction) has genuinely completed.
-export const applyPaymentToReceipt = async ({ receipt, amount, method, reference, paidBy }) => {
+export const applyPaymentToReceipt = async ({ receipt, amount, method, reference, paidBy, session = null }) => {
   amount = Number(Number(amount).toFixed(2));
 
   receipt.payments.push({ amount, method, reference: reference || null, paidBy: paidBy || null, paidAt: new Date() });
@@ -81,15 +81,15 @@ export const applyPaymentToReceipt = async ({ receipt, amount, method, reference
   receipt.status = totalPaid >= owed ? "paid" : "partial";
   if (receipt.status === "paid") receipt.paidAt = new Date();
 
-  await creditCashback(receipt, amount);
+  await creditCashback(receipt, amount, session);
 
-  await receipt.save();
+  await receipt.save({ session });
 
   if (receipt.status === "paid") {
     const updatedOrder = await Order.findOneAndUpdate(
       { _id: receipt.order, businessId: receipt.businessId },
       { status: "completed" }
-    );
+    ).session(session);
     if (!updatedOrder) {
       console.warn(
         `applyPaymentToReceipt: receipt ${receipt._id} references order ${receipt.order}, which was not found under businessId ${receipt.businessId} — possible cross-tenant data issue`
@@ -99,7 +99,6 @@ export const applyPaymentToReceipt = async ({ receipt, amount, method, reference
 
   return receipt;
 };
-
 // Redeem `pointsToRedeem` from `user`'s reward balance against `receipt`'s
 // balance due. Redeems less than requested if the balance due is smaller.
 //
