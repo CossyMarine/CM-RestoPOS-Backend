@@ -396,7 +396,7 @@ export const initiateMpesaPayment = async (req, res) => {
     if (receipt.status !== "unpaid") {
       return res.status(400).json({ message: "Receipt is already paid or voided" });
     }
-    if (receipt.mpesaStatus === "pending" && receipt.mpesaCheckoutRequestId) {
+    if (receipt.mpesaStatus === "pending") {
       return res.status(409).json({
         message: `A payment prompt was already sent to ${receipt.mpesaPhone} for this bill and is still waiting on the customer.`,
         alreadyPending: true,
@@ -456,6 +456,11 @@ export const initiateMpesaPayment = async (req, res) => {
         { _id: attempt._id },
         { $set: { status: "unknown", initiationError: stkErr.message } }
       );
+      // Block an immediate retry the same way a normal pending prompt does.
+      // No checkoutRequestId to store — Daraja never responded — so only
+      // mpesaStatus changes; the guard above no longer requires one.
+      receipt.mpesaStatus = "pending";
+      await receipt.save();
       throw stkErr;
     }
 

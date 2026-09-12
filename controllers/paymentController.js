@@ -246,33 +246,55 @@ export const getPendingManualPaymentsCount = async (req, res) => {
 export const confirmManualPayment = async (req, res) => {
   const { receiptId, paymentId } = req.params;
   const { businessId } = req;
+
+  const session = await mongoose.startSession();
   try {
-    const receipt = await Receipt.findOne({ _id: receiptId, businessId });
-    if (!receipt) return res.status(404).json({ message: "Bill not found" });
+    let updated;
 
-    const entry = receipt.pendingManualPayments.id(paymentId);
-    if (!entry) return res.status(404).json({ message: "Pending payment not found" });
+    await session.withTransaction(async () => {
+      const receipt = await Receipt.findOne({ _id: receiptId, businessId }).session(session);
+      if (!receipt) {
+        const err = new Error("Bill not found");
+        err.status = 404;
+        throw err;
+      }
 
-    const { amount, reference, paidBy } = entry;
-    receipt.pendingManualPayments.pull(paymentId);
+      const entry = receipt.pendingManualPayments.id(paymentId);
+      if (!entry) {
+        const err = new Error("Pending payment not found");
+        err.status = 404;
+        throw err;
+      }
 
-    const io = req.app.get("io");
-    const updated = await applyPaymentToReceipt({
-      receipt,
-      amount,
-      method: "manual_till",
-      reference,
-      paidBy,
+      const { amount, reference, paidBy } = entry;
+      receipt.pendingManualPayments.pull(paymentId);
+
+      updated = await applyPaymentToReceipt({
+        receipt,
+        amount,
+        method: "manual_till",
+        reference,
+        paidBy,
+        session,
+      });
     });
 
+    // Only reachable once the transaction has actually committed — same
+    // rule as payReceipt/payCashAndTill/payCombo/finalizeAttemptSuccess.
+    const io = req.app.get("io");
     io.emit("receipt:updated", updated);
     if (updated.status === "paid") io.emit("receipt:paid", updated);
     io.emit("receipt:manualPaymentResolved", { receiptId: updated._id, paymentId, action: "confirmed" });
 
     res.json({ message: "Payment confirmed", receipt: updated });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ message: error.message });
+    }
     console.error("Error confirming manual payment:", error.message);
     res.status(500).json({ message: "Failed to confirm payment", error: error.message });
+  } finally {
+    session.endSession();
   }
 };
 

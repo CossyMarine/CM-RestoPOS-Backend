@@ -225,8 +225,8 @@ export const payWithStk = async (req, res) => {
     // failure, or a staff cancel), mpesaStatus moves off "pending" and a
     // genuine retry is allowed again — this only ever blocks a second
     // request while one is still live.
-    if (receipt.mpesaStatus === "pending" && receipt.mpesaCheckoutRequestId) {
-      return res.status(409).json({
+if (receipt.mpesaStatus === "pending") {
+        return res.status(409).json({
         message: "A payment prompt was already sent for this bill and is still waiting on a response — check your phone.",
         alreadyPending: true,
         receipt,
@@ -275,6 +275,8 @@ export const payWithStk = async (req, res) => {
         { _id: attempt._id },
         { $set: { status: "unknown", initiationError: stkErr.message } }
       );
+      receipt.mpesaStatus = "pending";
+      await receipt.save();
       throw stkErr;
     }
 
