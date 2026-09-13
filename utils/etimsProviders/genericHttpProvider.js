@@ -21,8 +21,7 @@
 //   EtimsConfigurationError on failure — never a raw axios/network error —
 //   so callers can rely on a predictable shape.
 import axios from "axios";
-import { EtimsTemporaryError, EtimsPermanentError, EtimsConfigurationError } from "../etimsErrors.js";
-
+import { EtimsConfigurationError, EtimsTemporaryError, EtimsPermanentError } from "../etimsErrors.js";
 export default {
   async submitInvoice({ invoice, credentials, deviceInfo }) {
     const apiUrl = credentials?.apiUrl || deviceInfo?.apiUrl;
