@@ -12,9 +12,9 @@ import { EtimsConfigurationError, EtimsProviderError } from "./etimsErrors.js";
 // provider. Deliberately mirrors exactly the fields the current
 // EtimsSubmission/receipt flow already relies on (see the original
 // utils/etims.js payload) — no new fields invented this phase.
- export function buildInvoiceData({ receipt, kraPin }) {
+ export function buildInvoiceData({ receipt, kraPin, invoiceNumber }) {
   return {
-    invoiceNumber: receipt.billId,
+    invoiceNumber,
     taxPin: kraPin,
     items: receipt.items.map((i) => ({
       description: i.mealName,
@@ -36,9 +36,13 @@ import { EtimsConfigurationError, EtimsProviderError } from "./etimsErrors.js";
 // @param receipt — the paid Receipt document to submit.
 // @returns { invoiceNumber, raw } on success.
 // @throws EtimsConfigurationError | EtimsTemporaryError | EtimsPermanentError
-export async function submitInvoice({ businessId, receipt }) {
+// AFTER
+export async function submitInvoice({ businessId, receipt, invoiceNumber }) {
   if (!businessId) {
     throw new EtimsConfigurationError("submitInvoice called without a businessId");
+  }
+  if (!invoiceNumber) {
+    throw new EtimsConfigurationError("submitInvoice called without an invoiceNumber");
   }
 
   // Scoped explicitly by businessId (not _bypassTenantGuard) — this is the
@@ -64,8 +68,8 @@ export async function submitInvoice({ businessId, receipt }) {
   const credentials = config.getDecryptedCredentials();
 
   const adapter = getProviderAdapter(config.provider);
-  const invoice = buildInvoiceData({ receipt, kraPin });
-
+// AFTER
+const invoice = buildInvoiceData({ receipt, kraPin, invoiceNumber });
   try {
     return await adapter.submitInvoice({
       invoice,

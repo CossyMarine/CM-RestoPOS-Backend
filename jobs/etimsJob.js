@@ -63,10 +63,12 @@ agenda.define(
         // All provider/config resolution now lives behind eTIMSService —
         // this job no longer knows or cares which provider is configured,
         // how its credentials are shaped, or how it's actually called.
-        const result = await submitInvoice({
-          businessId: submission.businessId,
-          receipt,
-        });
+        // AFTER
+const result = await submitInvoice({
+  businessId: submission.businessId,
+  receipt,
+  invoiceNumber: submission.assignedInvoiceNumber,
+});
 
         submission.status = "submitted";
         submission.etimsInvoiceNumber = result?.invoiceNumber || null;
