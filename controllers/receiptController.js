@@ -153,7 +153,7 @@ export const payReceipt = async (req, res) => {
 // would land on an already-closed bill and (correctly) get refused and
 // flagged for manual reconciliation, which is the right outcome but an
 // avoidable one if we know right now that the bill moved on.
-async function cancelActiveAttemptIfAny(receipt, session = null) {
+  export async function cancelActiveAttemptIfAny(receipt, session = null) {
   if (!receipt.mpesaActiveAttempt) return;
   await MpesaPaymentAttempt.updateOne(
     { _id: receipt.mpesaActiveAttempt, status: { $in: ["pending", "processing", "unknown"] } },
@@ -322,7 +322,7 @@ const finalizeAttemptFailure = async ({ attempt, resultCode, resultDesc, io }) =
 // reconciliation query for that same checkoutRequestId is exactly what
 // resolves that ambiguity — it should NOT be locked out just because we
 // were unsure at the time.
-async function claimAttemptForFinalization(checkoutRequestId) {
+  export async function claimAttemptForFinalization(checkoutRequestId) {
   return MpesaPaymentAttempt.findOneAndUpdate(
     { checkoutRequestId, status: { $in: ["pending", "unknown"] }, _bypassTenantGuard: true },
     { $set: { status: "processing", processingStartedAt: new Date() } },
@@ -333,7 +333,7 @@ async function claimAttemptForFinalization(checkoutRequestId) {
 // If something fails after claiming but before we finalize, release the
 // claim back to "pending" so a later poll or sweep can retry it — otherwise
 // it's stuck in "processing" forever.
-async function releaseAttemptClaim(attempt) {
+export async function releaseAttemptClaim(attempt) {
   try {
     await MpesaPaymentAttempt.updateOne(
       { _id: attempt._id, status: "processing" },
