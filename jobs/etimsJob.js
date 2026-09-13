@@ -1,8 +1,7 @@
 import { agenda, withJobRetry } from "../utils/queue.js";
 import EtimsSubmission from "../models/EtimsSubmission.js";
-import Business from "../models/Business.js";
 import Receipt from "../models/Receipt.js";
-import { submitReceiptToEtims } from "../utils/etims.js";
+import { submitInvoice } from "../utils/etimsService.js";
 
 const MAX_ETIMS_ATTEMPTS = 6;
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
@@ -44,26 +43,22 @@ agenda.define(
       if (!submission) return;
 
       try {
-        const [business, receipt] = await Promise.all([
-          Business.findOne({
-            _id: submission.businessId,
-            _bypassTenantGuard: true,
-          }).select("taxPin"),
-
-          Receipt.findOne({
-            _id: submission.receiptId,
-            businessId: submission.businessId,
-            _bypassTenantGuard: true,
-          }),
-        ]);
+        const receipt = await Receipt.findOne({
+          _id: submission.receiptId,
+          businessId: submission.businessId,
+          _bypassTenantGuard: true,
+        });
 
         if (!receipt) {
           throw new Error("Receipt no longer exists");
         }
 
-        const result = await submitReceiptToEtims({
+        // All provider/config resolution now lives behind eTIMSService —
+        // this job no longer knows or cares which provider is configured,
+        // how its credentials are shaped, or how it's actually called.
+        const result = await submitInvoice({
+          businessId: submission.businessId,
           receipt,
-          businessTaxPin: business?.taxPin,
         });
 
         submission.status = "submitted";
