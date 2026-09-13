@@ -43,6 +43,22 @@ const etimsSubmissionSchema = new mongoose.Schema(
     submittedAt: {
       type: Date,
       default: null,
+    },    // Internally-assigned eTIMS invoice number/sequence — allocated ONCE
+    // per submission, on its first processing attempt, and persisted
+    // immediately so every retry of THIS submission reuses it instead of
+    // consuming a new value. Deliberately separate from etimsInvoiceNumber
+    // above: that field is the PROVIDER's own confirmation code, returned
+    // AFTER a successful transmission. These are two different numbers
+    // with two different origins — one we assign outgoing, one we receive
+    // back. assignedInvoiceSequence is the raw counter value (for
+    // ordering/auditing); assignedInvoiceNumber is its display form.
+    assignedInvoiceSequence: {
+      type: Number,
+      default: null,
+    },
+    assignedInvoiceNumber: {
+      type: String,
+      default: null,
     },
   },
   { timestamps: true }

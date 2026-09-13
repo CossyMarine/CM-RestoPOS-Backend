@@ -4,7 +4,7 @@ import {
   createBusiness,
   listBusinesses,
   toggleBusinessStatus,
-  createBusinessAdmin,
+  createBusinessAdmin,configureBusinessEtims,
   configureBusinessSettings,
   getPlatformOverview,
 } from "../controllers/superAdminController.js";
@@ -19,7 +19,7 @@ router.post("/businesses", createBusiness);
 router.patch("/businesses/:id/status", toggleBusinessStatus);
 router.post("/businesses/:id/admin", createBusinessAdmin);
 router.patch("/businesses/:id/settings", configureBusinessSettings);
-
+router.patch("/businesses/:id/etims-config", configureBusinessEtims);
 export default router;
 
 

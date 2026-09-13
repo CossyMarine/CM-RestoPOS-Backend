@@ -2,6 +2,7 @@ import { agenda, withJobRetry } from "../utils/queue.js";
 import EtimsSubmission from "../models/EtimsSubmission.js";
 import Receipt from "../models/Receipt.js";
 import { submitInvoice } from "../utils/etimsService.js";
+import { allocateNextEtimsInvoiceSequence, formatEtimsInvoiceNumber } from "../utils/etimsInvoiceNumbering.js"; // NEW
 
 const MAX_ETIMS_ATTEMPTS = 6;
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
@@ -43,6 +44,12 @@ agenda.define(
       if (!submission) return;
 
       try {
+        if (submission.assignedInvoiceSequence == null) {
+          const sequence = await allocateNextEtimsInvoiceSequence(submission.businessId);
+          submission.assignedInvoiceSequence = sequence;
+          submission.assignedInvoiceNumber = formatEtimsInvoiceNumber(sequence);
+          await submission.save();
+        }
         const receipt = await Receipt.findOne({
           _id: submission.receiptId,
           businessId: submission.businessId,

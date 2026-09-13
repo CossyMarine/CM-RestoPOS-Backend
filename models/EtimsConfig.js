@@ -163,10 +163,10 @@ etimsConfigSchema.statics.upsertForBusiness = async function (
   };
 
   return this.findOneAndUpdate(
-    { businessId, provider },
-    { $set: update },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
+  { businessId, provider },
+  { $set: update },
+  { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true, context: "query" }
+);
 };
 
 export default mongoose.model("EtimsConfig", etimsConfigSchema);
