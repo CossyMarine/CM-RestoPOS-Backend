@@ -12,7 +12,7 @@ import { EtimsConfigurationError, EtimsProviderError } from "./etimsErrors.js";
 // provider. Deliberately mirrors exactly the fields the current
 // EtimsSubmission/receipt flow already relies on (see the original
 // utils/etims.js payload) — no new fields invented this phase.
-function buildInvoiceData({ receipt, kraPin }) {
+ export function buildInvoiceData({ receipt, kraPin }) {
   return {
     invoiceNumber: receipt.billId,
     taxPin: kraPin,
