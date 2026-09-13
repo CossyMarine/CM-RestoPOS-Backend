@@ -272,14 +272,14 @@ const receiptSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-
-    mpesaInitiatedAt: { type: Date }, // when the STK push was actually sent — used for timeout detection
-  },
-  mpesaActiveAttempt: {
+ mpesaActiveAttempt: {
   type: mongoose.Schema.Types.ObjectId,
   ref: "MpesaPaymentAttempt",
   default: null,
 },
+    mpesaInitiatedAt: { type: Date }, // when the STK push was actually sent — used for timeout detection
+  },
+ 
   {
     timestamps: true,
   }
