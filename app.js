@@ -1,4 +1,3 @@
-
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -34,6 +33,23 @@ dotenv.config();
 const app = express();
 
 app.set("trust proxy", 1);
+
+/* Disable automatic ETag generation — every route here serves dynamic
+   admin/business data, not cacheable static content. Without this,
+   Express hashes every response body and the browser conditionally-GETs
+   on the next request; if the hash matches, the server replies
+   304 Not Modified and the browser serves its OWN stale cached copy —
+   even when the underlying data has genuinely changed since. This was
+   the cause of the superadmin dashboard silently showing stale business
+   data after a 200 OK had already been cached once. */
+app.set("etag", false);
+
+/* Belt-and-suspenders: explicitly tell browsers and any intermediary
+   proxy never to cache API responses at all. */
+app.use("/api", (req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
 
 /* CORS — credentials:true is required so the httpOnly auth cookie is sent */
 const ALLOWED_ORIGINS = [
