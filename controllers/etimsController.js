@@ -1,11 +1,30 @@
 // controllers/etimsController.js
+// AFTER
 import EtimsSubmission from "../models/EtimsSubmission.js";
 import EtimsConfig from "../models/EtimsConfig.js";
 import { agenda } from "../utils/queue.js";
 import { getProviderAdapter } from "../utils/etimsProviders/index.js";
 import { EtimsConfigurationError } from "../utils/etimsErrors.js";
+import { reconcileEtimsSubmissions } from "../utils/etimsReconciliation.js";
+
+// @desc    Read-only reconciliation snapshot for this business's own eTIMS
+//          submissions — counts by status, plus the records that need
+//          attention (failed, failed-permanent, stuck, internally
+//          inconsistent, or a paid receipt with no submission at all).
+//          Never modifies anything. req.businessId only — never accepts a
+//          businessId from the query/body, same as every other business-
+//          scoped eTIMS route here.
+// @route   GET /api/etims/reconciliation
+export const getEtimsReconciliation = async (req, res) => {
+  try {
+    const report = await reconcileEtimsSubmissions(req.businessId);
+    res.json(report);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
 // @desc    List this business's eTIMS submissions, optionally filtered by status
-// @route   GET /api/etims/submissions?status=failed-permanent
 export const listEtimsSubmissions = async (req, res) => {
   try {
     const filter = {};

@@ -77,15 +77,37 @@ const result = await submitInvoice({
         submission.attempts = attempt;
         submission.lastError = null;
 
+        // AFTER
         await submission.save();
       } catch (error) {
         submission.attempts = attempt;
         submission.lastError = error.message || "Unknown eTIMS submission error";
         submission.processingStartedAt = null;
+
+        // A provider adapter throwing EtimsPermanentError (see
+        // utils/etimsErrors.js) means the provider understood and rejected
+        // THIS exact invoice — retrying the identical payload will never
+        // succeed. Finalize as failed-permanent on the very first such
+        // rejection, regardless of attempt count, instead of burning
+        // through MAX_ETIMS_ATTEMPTS retries first. Every other error
+        // (temporary, configuration, or unclassified) keeps the existing
+        // attempt-based escalation and backoff untouched.
+        const isPermanent = error?.classification === "permanent";
         submission.status =
-          attempt >= MAX_ETIMS_ATTEMPTS ? "failed-permanent" : "failed";
+          isPermanent || attempt >= MAX_ETIMS_ATTEMPTS ? "failed-permanent" : "failed";
 
         await submission.save();
+
+        if (isPermanent) {
+          // Swallow rather than rethrow: withJobRetry must not schedule
+          // another attempt for a rejection that will never succeed. The
+          // submission itself already carries the terminal state, the
+          // error, and the attempt count — visible via reconciliation and
+          // manually recoverable via the existing retry endpoint, same as
+          // any other failed-permanent submission.
+          console.error(`eTIMS submission ${submission._id} permanently rejected:`, error.message);
+          return;
+        }
 
         throw error;
       }

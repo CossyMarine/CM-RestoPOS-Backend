@@ -3,19 +3,33 @@ import User from "../models/User.js";
 import AdminSettings from "../models/AdminSettings.js";
 import bcrypt from "bcryptjs";
 import { seedDefaultInventoryLocations } from "../models/InventoryLocation.js";
+// AFTER
 import EtimsConfig from "../models/EtimsConfig.js";
 import { getProviderAdapter } from "../utils/etimsProviders/index.js";
 import { EtimsConfigurationError } from "../utils/etimsErrors.js";
+import { reconcileEtimsSubmissions } from "../utils/etimsReconciliation.js";
+
+// @desc    Read-only eTIMS reconciliation snapshot for ONE explicitly chosen
+//          business — never all businesses at once, and never a business
+//          inferred from the superadmin's own account (superadmins have no
+//          businessId of their own). businessId comes from the URL param,
+//          validated against Business first — same pattern as
+//          configureBusinessEtims below.
+// @route   GET /api/superadmin/businesses/:id/etims-reconciliation
+export const getBusinessEtimsReconciliation = async (req, res) => {
+  try {
+    const businessId = req.params.id;
+    const business = await Business.findById(businessId);
+    if (!business) return res.status(404).json({ message: "Business not found" });
+
+    const report = await reconcileEtimsSubmissions(businessId);
+    res.json(report);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
 
 // @desc    Configure a business's eTIMS provider — for onboarding or
-//          platform-level support, without needing that business's own
-//          admin to do it. businessId comes from the URL param, validated
-//          against Business first — same pattern as createBusinessAdmin
-//          and configureBusinessSettings above. Not req.businessId (the
-//          superadmin's own), and not _bypassTenantGuard — upsertForBusiness
-//          always filters by an explicit businessId, which tenantGuard
-//          already exempts from its "missing businessId" block.
-// @route   PATCH /api/superadmin/businesses/:id/etims-config
 export const configureBusinessEtims = async (req, res) => {
   try {
     const businessId = req.params.id;

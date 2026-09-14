@@ -1,5 +1,4 @@
-import express from "express";
-import { protect, requireSuperAdmin } from "../Middlewares/authMiddleware.js";
+// AFTER
 import {
   createBusiness,
   listBusinesses,
@@ -7,6 +6,7 @@ import {
   createBusinessAdmin,configureBusinessEtims,
   configureBusinessSettings,
   getPlatformOverview,
+  getBusinessEtimsReconciliation,
 } from "../controllers/superAdminController.js";
 
 const router = express.Router();
@@ -20,7 +20,5 @@ router.patch("/businesses/:id/status", toggleBusinessStatus);
 router.post("/businesses/:id/admin", createBusinessAdmin);
 router.patch("/businesses/:id/settings", configureBusinessSettings);
 router.patch("/businesses/:id/etims-config", configureBusinessEtims);
+router.get("/businesses/:id/etims-reconciliation", getBusinessEtimsReconciliation);
 export default router;
-
-
-
