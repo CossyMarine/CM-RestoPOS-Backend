@@ -1,5 +1,6 @@
 // AFTER
 import express from "express";
+import { protect, requireSuperAdmin } from "../Middlewares/authMiddleware.js";
 import {
   createBusiness,
   listBusinesses,
