@@ -17,9 +17,9 @@ import Business from "../models/Business.js";
 export const resolvePublicBusinessId = async (req) => {
   if (req.query.businessId) return req.query.businessId;
 
-  const count = await Business.countDocuments({});
+  const count = await Business.countDocuments({ _bypassTenantGuard: true });
   if (count === 1) {
-    const onlyBusiness = await Business.findOne({});
+    const onlyBusiness = await Business.findOne({ _bypassTenantGuard: true });
     return String(onlyBusiness._id);
   }
 
