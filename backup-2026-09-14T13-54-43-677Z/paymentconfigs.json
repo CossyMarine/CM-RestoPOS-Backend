@@ -1,0 +1,17 @@
+[
+  {
+    "_id": "6a9e8c026343f707ec3343ff",
+    "provider": "mpesa",
+    "businessId": "6a9c0b423bd9ae1440630602",
+    "__v": 0,
+    "consumerKey": "DanJOU0Jbq7/JKfU.VqK+dWAA9bL0D73uEOgqPQ==.2YdRcy8/2Q5n8WTprpKnPBdYUG5RE+LTnzgXAdAI59mpO/VXlLJjIO4EZHxy7r0r",
+    "consumerSecret": "udZOxWguvNzbCXxA.fRGdXYb1tlMM9zpAJ4iauw==.M09ghLK+G/C956clSMoH44lVoNn8PQqZMg+Cx6DuLKRRpomJnV0y4+qGE2uE8T/wtD2RHV1gn8S2o+acMs/gsg==",
+    "createdAt": "2026-09-07T10:03:46.927Z",
+    "enabled": true,
+    "environment": "sandbox",
+    "passkey": "b2idpD2lnZTl7DSp.IWe7lXdmlqXXU9koJgc1gQ==.3x3wLQw1kNOYfxSqCGbPsTAM2mlKrsjDCj5zIvW6ZyX+LN1NNgmTkrSa1Gnm7kMpEdbpvPplU4XZ+fPEPzqGUw==",
+    "shortcode": "174379",
+    "updatedAt": "2026-09-07T18:06:08.439Z",
+    "shortcodeType": "paybill"
+  }
+]

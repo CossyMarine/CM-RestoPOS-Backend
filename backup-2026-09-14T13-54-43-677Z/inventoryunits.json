@@ -1,0 +1,56 @@
+[
+  {
+    "_id": "6a63db7d16372926cadaf08b",
+    "name": "Kilograms",
+    "abbreviation": "Kgs",
+    "createdAt": "2026-07-24T21:39:09.275Z",
+    "updatedAt": "2026-08-31T07:25:41.001Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a63db8a16372926cadaf090",
+    "name": "Litres",
+    "abbreviation": "L",
+    "createdAt": "2026-07-24T21:39:22.818Z",
+    "updatedAt": "2026-08-31T07:25:41.001Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a63dba116372926cadaf095",
+    "name": "Korogoro",
+    "abbreviation": "Korogoro",
+    "createdAt": "2026-07-24T21:39:45.033Z",
+    "updatedAt": "2026-08-31T07:25:41.001Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a63dbb316372926cadaf09a",
+    "name": "Cup",
+    "abbreviation": "Cups",
+    "createdAt": "2026-07-24T21:40:03.817Z",
+    "updatedAt": "2026-08-31T07:25:41.001Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a63dbc316372926cadaf09f",
+    "name": "Spoon",
+    "abbreviation": "Spoon(s)",
+    "createdAt": "2026-07-24T21:40:19.312Z",
+    "updatedAt": "2026-08-31T07:25:41.001Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a63dc6a16372926cadaf0c0",
+    "name": "Tomatoes",
+    "abbreviation": "Tomatoes",
+    "createdAt": "2026-07-24T21:43:06.750Z",
+    "updatedAt": "2026-08-31T07:25:41.001Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

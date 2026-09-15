@@ -4,7 +4,7 @@ import { protect, requireSuperAdmin } from "../Middlewares/authMiddleware.js";
 import {
   createBusiness,
   listBusinesses,
-  toggleBusinessStatus,
+  toggleBusinessStatus,getBusinessEtimsConfig,getBusinessPaymentConfig, configureBusinessPaymentConfig,
   createBusinessAdmin,configureBusinessEtims,
   configureBusinessSettings,
   getPlatformOverview,
@@ -23,4 +23,7 @@ router.post("/businesses/:id/admin", createBusinessAdmin);
 router.patch("/businesses/:id/settings", configureBusinessSettings);
 router.patch("/businesses/:id/etims-config", configureBusinessEtims);
 router.get("/businesses/:id/etims-reconciliation", getBusinessEtimsReconciliation);
+router.get("/businesses/:id/payment-config", getBusinessPaymentConfig);
+router.patch("/businesses/:id/payment-config", configureBusinessPaymentConfig);
+router.get("/businesses/:id/etims-config", getBusinessEtimsConfig);
 export default router;

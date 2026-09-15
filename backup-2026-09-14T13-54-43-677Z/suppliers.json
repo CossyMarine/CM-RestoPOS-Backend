@@ -1,0 +1,58 @@
+[
+  {
+    "_id": "6a6f2bc421e7653073d79f8e",
+    "name": "Eldoret Grain Suppliers",
+    "phone": "0712345678",
+    "email": "",
+    "address": "Eldoret",
+    "contactPerson": "John",
+    "note": "Rice supplier",
+    "isActive": true,
+    "createdAt": "2026-08-02T11:36:36.041Z",
+    "updatedAt": "2026-08-31T07:25:47.617Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a719ea6319e2e52e852132e",
+    "name": "viazi kiplagat",
+    "phone": "0712323343",
+    "email": "",
+    "address": "",
+    "contactPerson": "kiplagat",
+    "note": "",
+    "isActive": true,
+    "createdAt": "2026-08-04T08:11:18.806Z",
+    "updatedAt": "2026-08-31T07:25:47.617Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8a0a538b020f78400a7c38",
+    "name": "oil",
+    "phone": "0772727373",
+    "email": "",
+    "address": "",
+    "contactPerson": "",
+    "note": "",
+    "isActive": true,
+    "createdAt": "2026-08-22T20:45:07.811Z",
+    "updatedAt": "2026-08-31T07:25:47.617Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6aa040b0e876af4f9d1293c2",
+    "name": "fresh",
+    "phone": "01128023414",
+    "email": "shidayawatukibwari@gmail.com",
+    "address": "",
+    "contactPerson": "shidayawatu kibwari",
+    "note": "",
+    "isActive": true,
+    "businessId": "6a9c0b423bd9ae1440630602",
+    "createdAt": "2026-09-08T17:06:56.956Z",
+    "updatedAt": "2026-09-08T17:06:56.956Z",
+    "__v": 0
+  }
+]

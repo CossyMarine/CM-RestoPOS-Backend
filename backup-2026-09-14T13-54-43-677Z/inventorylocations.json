@@ -1,0 +1,122 @@
+[
+  {
+    "_id": "6a6ef07d7eec9acb3deb5370",
+    "name": "Store",
+    "code": "STORE",
+    "isActive": true,
+    "createdAt": "2026-08-02T07:23:41.971Z",
+    "updatedAt": "2026-08-31T07:25:39.596Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6ef07f7eec9acb3deb5376",
+    "name": "Kitchen",
+    "code": "KITCHEN",
+    "isActive": true,
+    "createdAt": "2026-08-02T07:23:43.376Z",
+    "updatedAt": "2026-08-31T07:25:39.596Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6ef07f7eec9acb3deb5379",
+    "name": "In Transit",
+    "code": "IN_TRANSIT",
+    "isActive": true,
+    "createdAt": "2026-08-02T07:23:43.665Z",
+    "updatedAt": "2026-08-31T07:25:39.596Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a9c088f3bd9ae144063042b",
+    "name": "Store",
+    "code": "STORE",
+    "isActive": true,
+    "businessId": "6a9c088e3bd9ae1440630428",
+    "createdAt": "2026-09-05T12:18:23.163Z",
+    "updatedAt": "2026-09-05T12:18:23.163Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a9c088f3bd9ae144063042e",
+    "name": "Kitchen",
+    "code": "KITCHEN",
+    "isActive": true,
+    "businessId": "6a9c088e3bd9ae1440630428",
+    "createdAt": "2026-09-05T12:18:23.454Z",
+    "updatedAt": "2026-09-05T12:18:23.454Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a9c088f3bd9ae1440630431",
+    "name": "In Transit",
+    "code": "IN_TRANSIT",
+    "isActive": true,
+    "businessId": "6a9c088e3bd9ae1440630428",
+    "createdAt": "2026-09-05T12:18:23.745Z",
+    "updatedAt": "2026-09-05T12:18:23.745Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a9c0b423bd9ae1440630605",
+    "name": "Store",
+    "code": "STORE",
+    "isActive": true,
+    "businessId": "6a9c0b423bd9ae1440630602",
+    "createdAt": "2026-09-05T12:29:54.702Z",
+    "updatedAt": "2026-09-05T12:29:54.702Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a9c0b423bd9ae1440630608",
+    "name": "Kitchen",
+    "code": "KITCHEN",
+    "isActive": true,
+    "businessId": "6a9c0b423bd9ae1440630602",
+    "createdAt": "2026-09-05T12:29:54.993Z",
+    "updatedAt": "2026-09-05T12:29:54.993Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a9c0b433bd9ae144063060b",
+    "name": "In Transit",
+    "code": "IN_TRANSIT",
+    "isActive": true,
+    "businessId": "6a9c0b423bd9ae1440630602",
+    "createdAt": "2026-09-05T12:29:55.281Z",
+    "updatedAt": "2026-09-05T12:29:55.281Z",
+    "__v": 0
+  },
+  {
+    "_id": "6aa7d9d0dc2f7bf991b74333",
+    "name": "Store",
+    "code": "STORE",
+    "isActive": true,
+    "businessId": "6aa7d9d0dc2f7bf991b74330",
+    "createdAt": "2026-09-14T11:26:08.501Z",
+    "updatedAt": "2026-09-14T11:26:08.501Z",
+    "__v": 0
+  },
+  {
+    "_id": "6aa7d9d0dc2f7bf991b74336",
+    "name": "Kitchen",
+    "code": "KITCHEN",
+    "isActive": true,
+    "businessId": "6aa7d9d0dc2f7bf991b74330",
+    "createdAt": "2026-09-14T11:26:08.797Z",
+    "updatedAt": "2026-09-14T11:26:08.797Z",
+    "__v": 0
+  },
+  {
+    "_id": "6aa7d9d1dc2f7bf991b74339",
+    "name": "In Transit",
+    "code": "IN_TRANSIT",
+    "isActive": true,
+    "businessId": "6aa7d9d0dc2f7bf991b74330",
+    "createdAt": "2026-09-14T11:26:09.087Z",
+    "updatedAt": "2026-09-14T11:26:09.087Z",
+    "__v": 0
+  }
+]

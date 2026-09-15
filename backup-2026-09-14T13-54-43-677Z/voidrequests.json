@@ -1,0 +1,67 @@
+[
+  {
+    "_id": "6a5c82c6f31dfeca803464be",
+    "receipt": "6a5c789fe0514ae16cc51521",
+    "reason": "Customer changed the mind",
+    "requestedBy": "6a5bfce3b1da9eca327a52f9",
+    "status": "approved",
+    "reviewedBy": "6a5ba513f2573f3917342583",
+    "reviewedAt": "2026-07-19T17:20:59.276Z",
+    "createdAt": "2026-07-19T07:54:46.595Z",
+    "updatedAt": "2026-08-31T07:25:33.837Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a5d0753fe7e3f7db8e23c3d",
+    "receipt": "6a5d06fbfe7e3f7db8e23c32",
+    "reason": "Customer changed the mind",
+    "requestedBy": "6a5bfce3b1da9eca327a52f9",
+    "status": "approved",
+    "reviewedBy": "6a5ba513f2573f3917342583",
+    "reviewedAt": "2026-07-19T17:20:50.894Z",
+    "createdAt": "2026-07-19T17:20:19.386Z",
+    "updatedAt": "2026-08-31T07:25:33.837Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8404fd3e1e0c0bfc3fe051",
+    "receipt": "6a8404b83e1e0c0bfc3fe03e",
+    "reason": "order refused",
+    "requestedBy": "6a8164726206877c0a6becd4",
+    "status": "approved",
+    "reviewedBy": "6a83391c60bec4e2f6242a0f",
+    "reviewedAt": "2026-08-18T07:09:48.472Z",
+    "createdAt": "2026-08-18T07:08:45.094Z",
+    "updatedAt": "2026-08-31T07:25:33.837Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a919821c085c1396301b6c4",
+    "receipt": "6a919582c085c1396301b6a6",
+    "reason": "spoiled",
+    "requestedBy": "6a8164726206877c0a6becd4",
+    "status": "pending",
+    "reviewedBy": null,
+    "reviewedAt": null,
+    "createdAt": "2026-08-28T14:16:01.430Z",
+    "updatedAt": "2026-08-31T07:25:33.837Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a91982cc085c1396301b6c8",
+    "receipt": "6a916f3b72f75e137777540f",
+    "reason": "spoiled",
+    "requestedBy": "6a8164726206877c0a6becd4",
+    "status": "pending",
+    "reviewedBy": null,
+    "reviewedAt": null,
+    "createdAt": "2026-08-28T14:16:12.534Z",
+    "updatedAt": "2026-08-31T07:25:33.837Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

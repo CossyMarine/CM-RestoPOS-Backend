@@ -1,0 +1,69 @@
+[
+  {
+    "_id": "6a93ea2502f80e7c5e4db197",
+    "billId": "B-TEST-001",
+    "businessId": "6a93ea2202f80e7c5e4db167",
+    "order": "6a93ea2502f80e7c5e4db195",
+    "shift": null,
+    "tableNumber": "B-1",
+    "waiterName": null,
+    "source": "staff",
+    "items": [
+      {
+        "menuItemId": null,
+        "mealName": "Tenant B Test Meal",
+        "imageUrl": null,
+        "quantity": 1,
+        "unitPrice": 100,
+        "lineTotal": 100,
+        "ready": false,
+        "addedAt": null
+      }
+    ],
+    "subtotal": 100,
+    "totalDue": 100,
+    "customer": null,
+    "status": "unpaid",
+    "paymentMethod": null,
+    "amountPaid": null,
+    "changeGiven": null,
+    "cashAmount": 0,
+    "tillAmount": 0,
+    "rewardPointsEarned": 0,
+    "rewardPointsRedeemed": 0,
+    "rewardKesRedeemed": 0,
+    "mpesaSource": null,
+    "mpesaPhone": null,
+    "mpesaCheckoutRequestId": null,
+    "mpesaMerchantRequestId": null,
+    "mpesaReceiptNumber": null,
+    "mpesaResultDesc": null,
+    "mpesaStatus": "idle",
+    "pendingCashAmount": 0,
+    "pendingTillAmount": 0,
+    "pendingPaidBy": null,
+    "voidReason": null,
+    "printedAt": null,
+    "paidAt": null,
+    "printCount": 0,
+    "discount": {
+      "kind": null,
+      "value": 0,
+      "amount": 0,
+      "reason": null,
+      "appliedBy": null,
+      "_id": "6a93ea2502f80e7c5e4db198"
+    },
+    "tax": {
+      "ratePercent": 0,
+      "inclusive": true,
+      "amount": 0,
+      "_id": "6a93ea2502f80e7c5e4db199"
+    },
+    "payments": [],
+    "pendingManualPayments": [],
+    "createdAt": "2026-08-30T08:30:29.402Z",
+    "updatedAt": "2026-08-30T08:30:29.402Z",
+    "__v": 0
+  }
+]

@@ -1,0 +1,19 @@
+[
+  {
+    "_id": "6a6f0ee1fd9768632f639b57",
+    "menuItem": "6a5bdf9eef8e3ddda3c07121",
+    "ingredients": [
+      {
+        "inventoryItem": "6a63dd2616372926cadaf0ed",
+        "quantity": 0.03,
+        "unit": "6a63db8a16372926cadaf090"
+      }
+    ],
+    "isActive": true,
+    "note": "Mturaa test recipe",
+    "createdAt": "2026-08-02T09:33:21.932Z",
+    "updatedAt": "2026-08-31T07:25:46.318Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

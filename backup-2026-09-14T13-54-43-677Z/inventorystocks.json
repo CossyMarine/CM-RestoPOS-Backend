@@ -1,0 +1,99 @@
+[
+  {
+    "_id": "6a6ef5c67eec9acb3deb5399",
+    "item": "6a63dd2616372926cadaf0ed",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "quantity": 55,
+    "createdAt": "2026-08-02T07:46:14.044Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "unbatchedQuantity": 5,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6ef6ae7eec9acb3deb53a8",
+    "item": "6a63dd2616372926cadaf0ed",
+    "location": "6a6ef07f7eec9acb3deb5376",
+    "quantity": 52.5,
+    "createdAt": "2026-08-02T07:50:06.019Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f1ea6cd853c6482f3c877",
+    "item": "6a63dd6216372926cadaf0f8",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "quantity": 213,
+    "createdAt": "2026-08-02T10:40:38.206Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "unbatchedQuantity": 52,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f1f22cd853c6482f3c88b",
+    "item": "6a63dd6216372926cadaf0f8",
+    "location": "6a6ef07f7eec9acb3deb5376",
+    "quantity": 235,
+    "createdAt": "2026-08-02T10:42:42.632Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "unbatchedQuantity": 6,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f1f5ccd853c6482f3c8b0",
+    "item": "6a6f1d46cd853c6482f3c850",
+    "location": "6a6ef07f7eec9acb3deb5376",
+    "quantity": 160,
+    "createdAt": "2026-08-02T10:43:40.604Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5d0ff8816ff4104c9cd7",
+    "item": "6a63dbfd16372926cadaf0a4",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "quantity": 968,
+    "createdAt": "2026-08-02T15:06:55.996Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "unbatchedQuantity": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a7066c61f0b8dc257acc17b",
+    "item": "6a645cb85e6759a4a77a1466",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "quantity": 0,
+    "createdAt": "2026-08-03T10:00:38.027Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "unbatchedQuantity": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a87dcb52ec4a1024a0f57e9",
+    "item": "6a87dc862ec4a1024a0f57c9",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "quantity": 0,
+    "createdAt": "2026-08-21T05:05:57.482Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "unbatchedQuantity": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8a0a788b020f78400a7c4b",
+    "item": "6a8a0a338b020f78400a7c1e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "quantity": 470,
+    "createdAt": "2026-08-22T20:45:44.118Z",
+    "updatedAt": "2026-08-31T07:25:36.556Z",
+    "__v": 0,
+    "unbatchedQuantity": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

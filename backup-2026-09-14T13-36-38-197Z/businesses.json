@@ -1,0 +1,22 @@
+[
+  {
+    "_id": "6a93ea2002f80e7c5e4db14c",
+    "name": "Test Business A",
+    "status": "pending",
+    "plan": "trial",
+    "subscriptionStatus": "trialing",
+    "createdAt": "2026-08-30T08:30:24.929Z",
+    "updatedAt": "2026-08-30T08:30:24.929Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a93ea2202f80e7c5e4db167",
+    "name": "Test Business B",
+    "status": "pending",
+    "plan": "trial",
+    "subscriptionStatus": "trialing",
+    "createdAt": "2026-08-30T08:30:26.835Z",
+    "updatedAt": "2026-08-30T08:30:26.835Z",
+    "__v": 0
+  }
+]

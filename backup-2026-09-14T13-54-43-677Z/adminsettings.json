@@ -1,0 +1,110 @@
+[
+  {
+    "_id": "6a5d3d47b64d8e6ca65cb462",
+    "key": "global",
+    "tillNumber": "428185",
+    "tillName": "Restos Hotel",
+    "whatsappNumber": "0742864543",
+    "callNumber": "0742864543",
+    "reward": {
+      "enabled": true,
+      "cashbackPercent": 10,
+      "pointValueKes": 1,
+      "targetPoints": 500,
+      "description": "Earn 10 % cashback on every bill"
+    },
+    "createdAt": "2026-07-19T21:10:31.345Z",
+    "updatedAt": "2026-08-31T07:25:51.843Z",
+    "__v": 0,
+    "assumeTableNumberCustomer": true,
+    "assumeTableNumberWaiter": true,
+    "allowPrintingDuringPayment": true,
+    "tax": {
+      "enabled": true,
+      "ratePercent": 16,
+      "inclusive": true
+    },
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a9c09503bd9ae1440630441",
+    "key": "global",
+    "businessId": "6a9c088e3bd9ae1440630428",
+    "tillNumber": "454565",
+    "tillName": "rtgrg",
+    "whatsappNumber": null,
+    "callNumber": null,
+    "assumeTableNumberCustomer": false,
+    "assumeTableNumberWaiter": false,
+    "allowPrintingDuringPayment": false,
+    "reward": {
+      "enabled": false,
+      "cashbackPercent": 0,
+      "pointValueKes": 1,
+      "targetPoints": 0,
+      "description": ""
+    },
+    "tax": {
+      "enabled": true,
+      "ratePercent": 16,
+      "inclusive": true
+    },
+    "createdAt": "2026-09-05T12:21:36.915Z",
+    "updatedAt": "2026-09-05T12:21:37.064Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a9c0b7a3bd9ae1440630615",
+    "key": "global",
+    "businessId": "6a9c0b423bd9ae1440630602",
+    "tillNumber": "3774",
+    "tillName": "enock",
+    "whatsappNumber": null,
+    "callNumber": null,
+    "assumeTableNumberCustomer": false,
+    "assumeTableNumberWaiter": false,
+    "allowPrintingDuringPayment": false,
+    "reward": {
+      "enabled": false,
+      "cashbackPercent": 0,
+      "pointValueKes": 1,
+      "targetPoints": 0,
+      "description": ""
+    },
+    "tax": {
+      "enabled": true,
+      "ratePercent": 16,
+      "inclusive": true
+    },
+    "createdAt": "2026-09-05T12:30:50.319Z",
+    "updatedAt": "2026-09-05T12:30:50.467Z",
+    "__v": 0
+  },
+  {
+    "_id": "6aa7da2adc2f7bf991b74345",
+    "key": "global",
+    "businessId": "6aa7d9d0dc2f7bf991b74330",
+    "tillNumber": "3445645656",
+    "tillName": "4544",
+    "whatsappNumber": null,
+    "callNumber": null,
+    "assumeTableNumberCustomer": false,
+    "assumeTableNumberWaiter": false,
+    "allowPrintingDuringPayment": false,
+    "reward": {
+      "enabled": false,
+      "cashbackPercent": 0,
+      "pointValueKes": 1,
+      "targetPoints": 0,
+      "description": ""
+    },
+    "tax": {
+      "enabled": true,
+      "ratePercent": 16,
+      "inclusive": true
+    },
+    "createdAt": "2026-09-14T11:27:38.192Z",
+    "updatedAt": "2026-09-14T11:27:38.350Z",
+    "__v": 0
+  }
+]

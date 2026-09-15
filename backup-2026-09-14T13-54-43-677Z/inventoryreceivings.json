@@ -1,0 +1,444 @@
+[
+  {
+    "_id": "6a6f218a53081cd7ff3ca052",
+    "supplierName": "Test Supplier",
+    "referenceNumber": "INV-001",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantity": 20,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 2800
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "Receiving test",
+    "status": "cancelled",
+    "createdAt": "2026-08-02T10:52:58.746Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f2c6021e7653073d79f9b",
+    "supplierName": "",
+    "referenceNumber": "INV-002",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantity": 10,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 1400
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "Supplier integration test",
+    "status": "received",
+    "createdAt": "2026-08-02T11:39:12.699Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f30d20febed147f7fba1d",
+    "supplierName": "",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "referenceNumber": "INV-002",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantity": 10,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 1400
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "Supplier integration test",
+    "status": "received",
+    "createdAt": "2026-08-02T11:58:10.446Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f401dde81d83831b89517",
+    "supplierName": "",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "referenceNumber": "PO-000001-REC-001",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantity": 30,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 4200
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "Partial delivery - 30 Kgs",
+    "status": "received",
+    "createdAt": "2026-08-02T13:03:25.492Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5bfcf8816ff4104c9c6f",
+    "supplierName": "",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd2616372926cadaf0ed",
+        "quantity": 50,
+        "unit": "6a63db8a16372926cadaf090",
+        "costPerUnit": 150,
+        "totalCost": 7500,
+        "batchNumber": "",
+        "manufacturingDate": "2026-08-01T00:00:00.000Z",
+        "expiryDate": "2026-08-25T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a6f5bfdf8816ff4104c9c76"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-02T15:02:20.686Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5d0ff8816ff4104c9cd3",
+    "supplierName": "",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dbfd16372926cadaf0a4",
+        "quantity": 89,
+        "unit": "6a63dba116372926cadaf095",
+        "costPerUnit": 100,
+        "totalCost": 8900,
+        "batchNumber": "",
+        "manufacturingDate": "2026-08-01T00:00:00.000Z",
+        "expiryDate": "2026-08-07T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a6f5d10f8816ff4104c9cdf"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-02T15:06:55.562Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5d11f8816ff4104c9ce7",
+    "supplierName": "",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dbfd16372926cadaf0a4",
+        "quantity": 89,
+        "unit": "6a63dba116372926cadaf095",
+        "costPerUnit": 100,
+        "totalCost": 8900,
+        "batchNumber": "",
+        "manufacturingDate": "2026-08-01T00:00:00.000Z",
+        "expiryDate": "2026-08-07T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a6f5d11f8816ff4104c9cf5"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-02T15:06:57.065Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5f6cf8816ff4104c9e29",
+    "supplierName": "",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantity": 10,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 1400,
+        "batchNumber": "TEST-FEFO-A",
+        "expiryDate": "2026-08-07T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a6f5f6df8816ff4104c9e30"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-02T15:17:00.925Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f608af8816ff4104c9f07",
+    "supplierName": "",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantity": 16,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 2240,
+        "batchNumber": "TEST-FEFO-",
+        "expiryDate": "2026-08-03T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a6f608af8816ff4104c9f0e"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-02T15:21:46.124Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f60cef8816ff4104c9f3b",
+    "supplierName": "",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantity": 500,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 70000,
+        "batchNumber": "500",
+        "expiryDate": "2028-06-12T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a6f60cff8816ff4104c9f42"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-02T15:22:54.192Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a7066c51f0b8dc257acc177",
+    "supplierName": "kiplagat",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a645cb85e6759a4a77a1466",
+        "quantity": 500,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 80,
+        "totalCost": 40000,
+        "batchNumber": "",
+        "expiryDate": "2026-08-06T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a7066c61f0b8dc257acc180"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-03T10:00:37.355Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a70671c1f0b8dc257acc1c5",
+    "supplierName": "",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dd2616372926cadaf0ed",
+        "quantity": 70,
+        "unit": "6a63db8a16372926cadaf090",
+        "costPerUnit": 150,
+        "totalCost": 10500,
+        "batchNumber": "",
+        "expiryDate": "2026-08-29T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a70671d1f0b8dc257acc1cc"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-03T10:02:04.759Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a719ef8319e2e52e8521344",
+    "supplierName": "viazi kiplagat",
+    "supplier": "6a719ea6319e2e52e852132e",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a645cb85e6759a4a77a1466",
+        "quantity": 500,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 80,
+        "totalCost": 40000,
+        "batchNumber": "",
+        "expiryDate": "2026-08-05T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a719ef8319e2e52e852134b"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-04T08:12:40.046Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a71a472319e2e52e85213fa",
+    "supplierName": "Eldoret Grain Suppliers",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "purchaseOrder": "6a71a42c319e2e52e85213d9",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dbfd16372926cadaf0a4",
+        "quantity": 300,
+        "unit": "6a63dba116372926cadaf095",
+        "costPerUnit": 100,
+        "totalCost": 30000,
+        "batchNumber": "",
+        "batchNote": "",
+        "batch": "6a71a473319e2e52e8521401"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-04T08:36:02.172Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8194320fc8e89c87fa33f2",
+    "supplierName": "viazi kiplagat",
+    "supplier": "6a719ea6319e2e52e852132e",
+    "purchaseOrder": "6a8193e60fc8e89c87fa33d1",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a63dbfd16372926cadaf0a4",
+        "quantity": 500,
+        "unit": "6a63dba116372926cadaf095",
+        "costPerUnit": 100,
+        "totalCost": 50000,
+        "batchNumber": "",
+        "batchNote": "",
+        "batch": "6a8194330fc8e89c87fa33f9"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-16T10:42:58.675Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a87dcb52ec4a1024a0f57e5",
+    "supplierName": "viazi kiplagat",
+    "supplier": "6a719ea6319e2e52e852132e",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a87dc862ec4a1024a0f57c9",
+        "quantity": 1000,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 80,
+        "totalCost": 80000,
+        "batchNumber": "",
+        "expiryDate": "2026-08-18T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a87dcb62ec4a1024a0f57ee"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-21T05:05:57.046Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8a0a778b020f78400a7c47",
+    "supplierName": "oil",
+    "supplier": "6a8a0a538b020f78400a7c38",
+    "referenceNumber": "",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "items": [
+      {
+        "inventoryItem": "6a8a0a338b020f78400a7c1e",
+        "quantity": 500,
+        "unit": "6a63db8a16372926cadaf090",
+        "costPerUnit": 150,
+        "totalCost": 75000,
+        "batchNumber": "",
+        "expiryDate": "2026-09-05T00:00:00.000Z",
+        "batchNote": "",
+        "batch": "6a8a0a788b020f78400a7c50"
+      }
+    ],
+    "receivedBy": "6a5ba513f2573f3917342583",
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-22T20:45:43.678Z",
+    "updatedAt": "2026-08-31T07:25:40.230Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

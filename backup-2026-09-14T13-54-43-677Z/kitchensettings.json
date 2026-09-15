@@ -1,0 +1,19 @@
+[
+  {
+    "_id": "6a63adc41dcfd8920b032f3b",
+    "key": "global",
+    "sortOrder": "oldest",
+    "requireClickToServe": true,
+    "cardSize": "medium",
+    "soundEnabled": true,
+    "lateThresholdMinutes": 8,
+    "criticalThresholdMinutes": 15,
+    "createdAt": "2026-07-24T18:24:04.035Z",
+    "updatedAt": "2026-08-31T07:25:52.652Z",
+    "__v": 0,
+    "notificationSoundId": "6a63cd30b6d13581dad8de94",
+    "notificationSoundName": "Kitchen Bell 1",
+    "notificationSoundUrl": "https://res.cloudinary.com/ob9zjc1s/video/upload/v1784925488/restopos/notification-sounds/xmqauz3k2uu4qgdhrakh.mp3",
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

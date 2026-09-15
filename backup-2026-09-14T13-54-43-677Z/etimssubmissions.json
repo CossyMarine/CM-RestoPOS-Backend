@@ -1,0 +1,28 @@
+[
+  {
+    "_id": "6aa042a15d376a2824145a45",
+    "receiptId": "6a9e9d789acd3ce5e2594fcc",
+    "businessId": "6a9c0b423bd9ae1440630602",
+    "__v": 0,
+    "attempts": 0,
+    "createdAt": "2026-09-08T17:15:13.733Z",
+    "etimsInvoiceNumber": null,
+    "lastError": null,
+    "status": "queued",
+    "submittedAt": null,
+    "updatedAt": "2026-09-08T17:15:13.733Z"
+  },
+  {
+    "_id": "6aa04b4a5d376a2824145a84",
+    "receiptId": "6aa04aefc9ff4cfa1e34d4c4",
+    "businessId": "6a9c0b423bd9ae1440630602",
+    "__v": 0,
+    "attempts": 0,
+    "createdAt": "2026-09-08T17:52:10.510Z",
+    "etimsInvoiceNumber": null,
+    "lastError": null,
+    "status": "queued",
+    "submittedAt": null,
+    "updatedAt": "2026-09-08T17:52:10.510Z"
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "_id": "6a93ea2502f80e7c5e4db195",
+    "tableNumber": "B-1",
+    "waiterName": null,
+    "items": [
+      {
+        "menuItemId": null,
+        "mealName": "Tenant B Test Meal",
+        "imageUrl": null,
+        "quantity": 1,
+        "unitPrice": 100,
+        "lineTotal": 100,
+        "ready": false,
+        "addedAt": null
+      }
+    ],
+    "subtotal": 100,
+    "status": "pending",
+    "source": "staff",
+    "businessId": "6a93ea2202f80e7c5e4db167",
+    "customer": null,
+    "customerName": null,
+    "servedAt": null,
+    "cancelledAt": null,
+    "createdAt": "2026-08-30T08:30:29.202Z",
+    "updatedAt": "2026-08-30T08:30:29.202Z",
+    "__v": 0
+  }
+]

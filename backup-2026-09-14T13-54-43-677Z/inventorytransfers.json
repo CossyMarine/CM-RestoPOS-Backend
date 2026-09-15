@@ -1,0 +1,136 @@
+[
+  {
+    "_id": "6a6f05aeabbf8894dc391bad",
+    "item": "6a63dd2616372926cadaf0ed",
+    "quantity": 5,
+    "fromLocation": "6a6ef07d7eec9acb3deb5370",
+    "toLocation": "6a6ef07f7eec9acb3deb5376",
+    "transferredBy": "6a5ba513f2573f3917342583",
+    "note": "Phase 1 transfer test",
+    "createdAt": "2026-08-02T08:54:06.439Z",
+    "updatedAt": "2026-08-31T07:25:43.237Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f1f23cd853c6482f3c88f",
+    "item": "6a63dd6216372926cadaf0f8",
+    "quantity": 2,
+    "fromLocation": "6a6ef07d7eec9acb3deb5370",
+    "toLocation": "6a6ef07f7eec9acb3deb5376",
+    "transferredBy": "6a5ba513f2573f3917342583",
+    "note": "Production test",
+    "createdAt": "2026-08-02T10:42:43.071Z",
+    "updatedAt": "2026-08-31T07:25:43.237Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5deff8816ff4104c9d7d",
+    "item": "6a63dd6216372926cadaf0f8",
+    "quantity": 3,
+    "fromLocation": "6a6ef07d7eec9acb3deb5370",
+    "toLocation": "6a6ef07f7eec9acb3deb5376",
+    "transferredBy": "6a5ba513f2573f3917342583",
+    "batchTransfers": [],
+    "legacyQuantity": 3,
+    "note": "DEV integrity transfer",
+    "createdAt": "2026-08-02T15:10:39.419Z",
+    "updatedAt": "2026-08-31T07:25:43.237Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5e1bf8816ff4104c9daa",
+    "item": "6a63dd6216372926cadaf0f8",
+    "quantity": 3,
+    "fromLocation": "6a6ef07d7eec9acb3deb5370",
+    "toLocation": "6a6ef07f7eec9acb3deb5376",
+    "transferredBy": "6a5ba513f2573f3917342583",
+    "batchTransfers": [],
+    "legacyQuantity": 3,
+    "note": "DEV integrity transfer",
+    "createdAt": "2026-08-02T15:11:23.350Z",
+    "updatedAt": "2026-08-31T07:25:43.237Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f6527f8816ff4104c9f9c",
+    "item": "6a63dd6216372926cadaf0f8",
+    "quantity": 50,
+    "fromLocation": "6a6ef07d7eec9acb3deb5370",
+    "toLocation": "6a6ef07f7eec9acb3deb5376",
+    "transferredBy": "6a5ba513f2573f3917342583",
+    "batchTransfers": [
+      {
+        "batch": "6a6f608af8816ff4104c9f0e",
+        "quantity": 16,
+        "destinationBatch": "6a6f6526f8816ff4104c9f8f",
+        "_id": "6a6f6527f8816ff4104c9f9d"
+      },
+      {
+        "batch": "6a6f5f6df8816ff4104c9e30",
+        "quantity": 10,
+        "destinationBatch": "6a6f6526f8816ff4104c9f94",
+        "_id": "6a6f6527f8816ff4104c9f9e"
+      },
+      {
+        "batch": "6a6f60cff8816ff4104c9f42",
+        "quantity": 24,
+        "destinationBatch": "6a6f6527f8816ff4104c9f99",
+        "_id": "6a6f6527f8816ff4104c9f9f"
+      }
+    ],
+    "legacyQuantity": 0,
+    "note": "DEV integrity transfer",
+    "createdAt": "2026-08-02T15:41:27.537Z",
+    "updatedAt": "2026-08-31T07:25:43.237Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f6679f8816ff4104ca018",
+    "item": "6a63dd6216372926cadaf0f8",
+    "quantity": 300,
+    "fromLocation": "6a6ef07d7eec9acb3deb5370",
+    "toLocation": "6a6ef07f7eec9acb3deb5376",
+    "transferredBy": "6a5ba513f2573f3917342583",
+    "batchTransfers": [
+      {
+        "batch": "6a6f60cff8816ff4104c9f42",
+        "quantity": 300,
+        "destinationBatch": "6a6f6527f8816ff4104c9f99",
+        "_id": "6a6f6679f8816ff4104ca019"
+      }
+    ],
+    "legacyQuantity": 0,
+    "note": "DEV integrity transfer",
+    "createdAt": "2026-08-02T15:47:05.464Z",
+    "updatedAt": "2026-08-31T07:25:43.237Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a70674d1f0b8dc257acc21d",
+    "item": "6a63dd2616372926cadaf0ed",
+    "quantity": 50,
+    "fromLocation": "6a6ef07d7eec9acb3deb5370",
+    "toLocation": "6a6ef07f7eec9acb3deb5376",
+    "transferredBy": "6a5ba513f2573f3917342583",
+    "batchTransfers": [
+      {
+        "batch": "6a6f5bfdf8816ff4104c9c76",
+        "quantity": 50,
+        "destinationBatch": "6a70674c1f0b8dc257acc21a",
+        "_id": "6a70674d1f0b8dc257acc21e"
+      }
+    ],
+    "legacyQuantity": 0,
+    "note": "",
+    "createdAt": "2026-08-03T10:02:53.261Z",
+    "updatedAt": "2026-08-31T07:25:43.237Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

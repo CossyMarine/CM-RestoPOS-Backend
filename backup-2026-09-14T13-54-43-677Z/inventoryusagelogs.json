@@ -1,0 +1,447 @@
+[
+  {
+    "_id": "6a63ddfc16372926cadaf145",
+    "item": "6a63dd2616372926cadaf0ed",
+    "quantity": 4,
+    "reason": "used",
+    "costPerUnit": 150,
+    "totalValue": 600,
+    "recordedBy": "6a6232deffb3c354779747c6",
+    "note": "Chips",
+    "createdAt": "2026-07-24T21:49:48.660Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a63de1316372926cadaf14a",
+    "item": "6a63dbfd16372926cadaf0a4",
+    "quantity": 5,
+    "reason": "used",
+    "costPerUnit": 100,
+    "totalValue": 500,
+    "recordedBy": "6a6232deffb3c354779747c6",
+    "note": "",
+    "createdAt": "2026-07-24T21:50:11.500Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a63e03716372926cadaf236",
+    "item": "6a63dd6216372926cadaf0f8",
+    "quantity": 10,
+    "reason": "used",
+    "costPerUnit": 130,
+    "totalValue": 1300,
+    "recordedBy": "6a6232deffb3c354779747c6",
+    "note": "",
+    "createdAt": "2026-07-24T21:59:19.891Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a66111aa37d4d65f9a0b506",
+    "item": "6a63dbfd16372926cadaf0a4",
+    "quantity": 5,
+    "reason": "used",
+    "costPerUnit": 100,
+    "totalValue": 500,
+    "recordedBy": "6a6232deffb3c354779747c6",
+    "note": "",
+    "createdAt": "2026-07-26T13:52:26.744Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f063eabbf8894dc391bbe",
+    "item": "6a63dd2616372926cadaf0ed",
+    "quantity": 2,
+    "reason": "used",
+    "costPerUnit": 100,
+    "totalValue": 200,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Phase 1 final test",
+    "createdAt": "2026-08-02T08:56:30.789Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f1f5bcd853c6482f3c8a7",
+    "item": "6a63dd6216372926cadaf0f8",
+    "quantity": 2,
+    "reason": "used",
+    "costPerUnit": 130,
+    "totalValue": 260,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Production completed",
+    "createdAt": "2026-08-02T10:43:39.603Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f1f5ccd853c6482f3c8ad",
+    "item": "6a63dd2616372926cadaf0ed",
+    "quantity": 0.5,
+    "reason": "used",
+    "costPerUnit": 100,
+    "totalValue": 50,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Production completed",
+    "createdAt": "2026-08-02T10:43:40.319Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5e6ef8816ff4104c9ddc",
+    "item": "6a63dd6216372926cadaf0f8",
+    "location": "6a6ef07f7eec9acb3deb5376",
+    "batchUsage": [],
+    "legacyQuantityConsumed": 1,
+    "quantity": 1,
+    "reason": "waste",
+    "costPerUnit": 140,
+    "totalValue": 140,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "DEV integrity waste",
+    "createdAt": "2026-08-02T15:12:46.030Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f5ea1f8816ff4104c9e06",
+    "item": "6a63dd6216372926cadaf0f8",
+    "location": "6a6ef07f7eec9acb3deb5376",
+    "batchUsage": [],
+    "legacyQuantityConsumed": 2,
+    "quantity": 2,
+    "reason": "used",
+    "costPerUnit": 140,
+    "totalValue": 280,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "DEV integrity usage",
+    "createdAt": "2026-08-02T15:13:37.026Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f65fbf8816ff4104c9fd4",
+    "item": "6a63dd6216372926cadaf0f8",
+    "legacyQuantityConsumed": 0,
+    "quantity": 18,
+    "reason": "used",
+    "costPerUnit": 140,
+    "totalValue": 2520,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Production completed",
+    "batchUsage": [],
+    "createdAt": "2026-08-02T15:44:59.730Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f6686f8816ff4104ca04c",
+    "item": "6a63dd6216372926cadaf0f8",
+    "legacyQuantityConsumed": 0,
+    "quantity": 100,
+    "reason": "used",
+    "costPerUnit": 140,
+    "totalValue": 14000,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Production completed",
+    "batchUsage": [],
+    "createdAt": "2026-08-02T15:47:18.295Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a809a60e4ab19404cb6bb09",
+    "item": "6a63dd6216372926cadaf0f8",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a6f60cff8816ff4104c9f42",
+        "quantityConsumed": 5,
+        "_id": "6a809a60e4ab19404cb6bb0a"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 5,
+    "reason": "waste",
+    "costPerUnit": 140,
+    "totalValue": 700,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "fall when transporting",
+    "createdAt": "2026-08-15T16:57:04.526Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a89f644784fc50658005db1",
+    "item": "6a63dbfd16372926cadaf0a4",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a71a473319e2e52e8521401",
+        "quantityConsumed": 10,
+        "_id": "6a89f644784fc50658005db2"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 10,
+    "reason": "used",
+    "costPerUnit": 100,
+    "totalValue": 1000,
+    "recordedBy": "6a896a81efd381f42a08a0f8",
+    "note": "",
+    "createdAt": "2026-08-22T19:19:32.872Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a89f662784fc50658005dca",
+    "item": "6a63dd6216372926cadaf0f8",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a6f60cff8816ff4104c9f42",
+        "quantityConsumed": 10,
+        "_id": "6a89f662784fc50658005dcb"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 10,
+    "reason": "used",
+    "costPerUnit": 140,
+    "totalValue": 1400,
+    "recordedBy": "6a896a81efd381f42a08a0f8",
+    "note": "",
+    "createdAt": "2026-08-22T19:20:02.645Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a89f68e784fc50658005de9",
+    "item": "6a63dd2616372926cadaf0ed",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a70671d1f0b8dc257acc1cc",
+        "quantityConsumed": 10,
+        "_id": "6a89f68e784fc50658005dea"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 10,
+    "reason": "used",
+    "costPerUnit": 150,
+    "totalValue": 1500,
+    "recordedBy": "6a896a81efd381f42a08a0f8",
+    "note": "",
+    "createdAt": "2026-08-22T19:20:46.295Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a89fa24f0f0f54bbd61f669",
+    "item": "6a63dd2616372926cadaf0ed",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a70671d1f0b8dc257acc1cc",
+        "quantityConsumed": 10,
+        "_id": "6a89fa24f0f0f54bbd61f66a"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 10,
+    "reason": "used",
+    "costPerUnit": 150,
+    "totalValue": 1500,
+    "recordedBy": "6a896a81efd381f42a08a0f8",
+    "note": "",
+    "createdAt": "2026-08-22T19:36:04.615Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a89fa5bf0f0f54bbd61f75f",
+    "item": "6a645cb85e6759a4a77a1466",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a719ef8319e2e52e852134b",
+        "quantityConsumed": 500,
+        "_id": "6a89fa5bf0f0f54bbd61f760"
+      },
+      {
+        "batch": "6a7066c61f0b8dc257acc180",
+        "quantityConsumed": 500,
+        "_id": "6a89fa5bf0f0f54bbd61f761"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 1000,
+    "reason": "waste",
+    "costPerUnit": 80,
+    "totalValue": 80000,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Waste recorded for spoiled",
+    "createdAt": "2026-08-22T19:36:59.950Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a89fd2b8b020f78400a6cee",
+    "item": "6a87dc862ec4a1024a0f57c9",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a87dcb62ec4a1024a0f57ee",
+        "quantityConsumed": 1000,
+        "_id": "6a89fd2b8b020f78400a6cef"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 1000,
+    "reason": "waste",
+    "costPerUnit": 80,
+    "totalValue": 80000,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Waste recorded for spoiled",
+    "createdAt": "2026-08-22T19:48:59.156Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8a0b048b020f78400a7ca8",
+    "item": "6a8a0a338b020f78400a7c1e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a8a0a788b020f78400a7c50",
+        "quantityConsumed": 10,
+        "_id": "6a8a0b048b020f78400a7ca9"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 10,
+    "reason": "waste",
+    "costPerUnit": 150,
+    "totalValue": 1500,
+    "recordedBy": "6a896a81efd381f42a08a0f8",
+    "note": "",
+    "createdAt": "2026-08-22T20:48:04.071Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8bfbcfe45742aa4b31f19c",
+    "item": "6a8a0a338b020f78400a7c1e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a8a0a788b020f78400a7c50",
+        "quantityConsumed": 5,
+        "_id": "6a8bfbcfe45742aa4b31f19d"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 5,
+    "reason": "waste",
+    "costPerUnit": 150,
+    "totalValue": 750,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Waste recorded for spillage",
+    "createdAt": "2026-08-24T08:07:43.489Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8bfbdfe45742aa4b31f1b0",
+    "item": "6a8a0a338b020f78400a7c1e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a8a0a788b020f78400a7c50",
+        "quantityConsumed": 5,
+        "_id": "6a8bfbcfe45742aa4b31f19a"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 5,
+    "reason": "waste",
+    "costPerUnit": 150,
+    "totalValue": 750,
+    "recordedBy": "6a5ba513f2573f3917342583",
+    "note": "Waste reversal for 6a8bfbcfe45742aa4b31f199",
+    "createdAt": "2026-08-24T08:07:59.125Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8eda3beab84448eaedeb5a",
+    "item": "6a8a0a338b020f78400a7c1e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a8a0a788b020f78400a7c50",
+        "quantityConsumed": 10,
+        "_id": "6a8eda3beab84448eaedeb5b"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 10,
+    "reason": "used",
+    "costPerUnit": 150,
+    "totalValue": 1500,
+    "recordedBy": "6a896a81efd381f42a08a0f8",
+    "note": "",
+    "createdAt": "2026-08-26T12:21:15.512Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a917e4ec085c1396301b4ab",
+    "item": "6a8a0a338b020f78400a7c1e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "batchUsage": [
+      {
+        "batch": "6a8a0a788b020f78400a7c50",
+        "quantityConsumed": 10,
+        "_id": "6a917e4ec085c1396301b4ac"
+      }
+    ],
+    "legacyQuantityConsumed": 0,
+    "quantity": 10,
+    "reason": "used",
+    "costPerUnit": 150,
+    "totalValue": 1500,
+    "recordedBy": "6a896a81efd381f42a08a0f8",
+    "note": "",
+    "createdAt": "2026-08-28T12:25:50.237Z",
+    "updatedAt": "2026-08-31T07:25:41.711Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

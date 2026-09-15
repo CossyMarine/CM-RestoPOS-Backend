@@ -1,0 +1,71 @@
+[
+  {
+    "_id": "6a6f3dc6de81d83831b894fd",
+    "poNumber": "PO-000001",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "orderedBy": "6a5ba513f2573f3917342583",
+    "items": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantityOrdered": 50,
+        "quantityReceived": 30,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 7000
+      }
+    ],
+    "note": "PO integration test",
+    "status": "partially_received",
+    "createdAt": "2026-08-02T12:53:26.675Z",
+    "updatedAt": "2026-08-31T07:25:45.615Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a71a42c319e2e52e85213d9",
+    "poNumber": "PO-000002",
+    "supplier": "6a6f2bc421e7653073d79f8e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "orderedBy": "6a5ba513f2573f3917342583",
+    "items": [
+      {
+        "inventoryItem": "6a63dbfd16372926cadaf0a4",
+        "quantityOrdered": 300,
+        "quantityReceived": 300,
+        "unit": "6a63dba116372926cadaf095",
+        "costPerUnit": 100,
+        "totalCost": 30000
+      }
+    ],
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-04T08:34:52.432Z",
+    "updatedAt": "2026-08-31T07:25:45.615Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a8193e60fc8e89c87fa33d1",
+    "poNumber": "PO-000003",
+    "supplier": "6a719ea6319e2e52e852132e",
+    "location": "6a6ef07d7eec9acb3deb5370",
+    "orderedBy": "6a5ba513f2573f3917342583",
+    "items": [
+      {
+        "inventoryItem": "6a63dbfd16372926cadaf0a4",
+        "quantityOrdered": 500,
+        "quantityReceived": 500,
+        "unit": "6a63dba116372926cadaf095",
+        "costPerUnit": 100,
+        "totalCost": 50000
+      }
+    ],
+    "note": "",
+    "status": "received",
+    "createdAt": "2026-08-16T10:41:42.006Z",
+    "updatedAt": "2026-08-31T07:25:45.615Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

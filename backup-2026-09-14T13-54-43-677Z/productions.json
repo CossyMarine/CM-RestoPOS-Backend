@@ -1,0 +1,102 @@
+[
+  {
+    "_id": "6a6f1f5dcd853c6482f3c8b4",
+    "producedItem": "6a6f1d46cd853c6482f3c850",
+    "quantityProduced": 10,
+    "unit": "6a63db7d16372926cadaf08b",
+    "location": "6a6ef07f7eec9acb3deb5376",
+    "ingredientsUsed": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantityUsed": 2,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 130,
+        "totalCost": 260
+      },
+      {
+        "inventoryItem": "6a63dd2616372926cadaf0ed",
+        "quantityUsed": 0.5,
+        "unit": "6a63db8a16372926cadaf090",
+        "costPerUnit": 100,
+        "totalCost": 50
+      }
+    ],
+    "producedBy": "6a5ba513f2573f3917342583",
+    "note": "Production test",
+    "status": "completed",
+    "createdAt": "2026-08-02T10:43:41.037Z",
+    "updatedAt": "2026-08-31T07:25:44.881Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f65fcf8816ff4104c9fdc",
+    "producedItem": "6a6f1d46cd853c6482f3c850",
+    "quantityProduced": 50,
+    "unit": "6a63db7d16372926cadaf08b",
+    "location": "6a6ef07f7eec9acb3deb5376",
+    "ingredientsUsed": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantityUsed": 18,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 2520,
+        "batchUsage": [
+          {
+            "batch": "6a6f6526f8816ff4104c9f8f",
+            "quantityConsumed": 16
+          },
+          {
+            "batch": "6a6f6526f8816ff4104c9f94",
+            "quantityConsumed": 2
+          }
+        ],
+        "legacyQuantityConsumed": 0
+      }
+    ],
+    "producedBy": "6a5ba513f2573f3917342583",
+    "note": "DEV integrity production",
+    "status": "completed",
+    "producedBatch": "6a6f65fcf8816ff4104c9fda",
+    "createdAt": "2026-08-02T15:45:00.589Z",
+    "updatedAt": "2026-08-31T07:25:44.881Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  },
+  {
+    "_id": "6a6f6687f8816ff4104ca054",
+    "producedItem": "6a6f1d46cd853c6482f3c850",
+    "quantityProduced": 100,
+    "unit": "6a63db7d16372926cadaf08b",
+    "location": "6a6ef07f7eec9acb3deb5376",
+    "ingredientsUsed": [
+      {
+        "inventoryItem": "6a63dd6216372926cadaf0f8",
+        "quantityUsed": 100,
+        "unit": "6a63db7d16372926cadaf08b",
+        "costPerUnit": 140,
+        "totalCost": 14000,
+        "batchUsage": [
+          {
+            "batch": "6a6f6526f8816ff4104c9f94",
+            "quantityConsumed": 8
+          },
+          {
+            "batch": "6a6f6527f8816ff4104c9f99",
+            "quantityConsumed": 92
+          }
+        ],
+        "legacyQuantityConsumed": 0
+      }
+    ],
+    "producedBy": "6a5ba513f2573f3917342583",
+    "note": "DEV integrity production",
+    "status": "completed",
+    "producedBatch": "6a6f6687f8816ff4104ca052",
+    "createdAt": "2026-08-02T15:47:19.149Z",
+    "updatedAt": "2026-08-31T07:25:44.881Z",
+    "__v": 0,
+    "businessId": "6a9191d695c4bdbd38684853"
+  }
+]

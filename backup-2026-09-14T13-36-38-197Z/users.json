@@ -1,0 +1,34 @@
+[
+  {
+    "_id": "6a93ea2302f80e7c5e4db179",
+    "fullName": "Admin A",
+    "email": "admin-a@example.test",
+    "password": "not-used-in-this-test",
+    "isAdmin": true,
+    "role": "customer",
+    "businessId": "6a93ea2002f80e7c5e4db14c",
+    "isActive": true,
+    "permissions": {
+      "inventory": false,
+      "manageMenu": false,
+      "ordersReceipts": true,
+      "voidRequests": true,
+      "users": false,
+      "settings": false,
+      "waiterManagement": false,
+      "kitchen": false,
+      "paymentConfirmation": false,
+      "payments": true,
+      "applyDiscounts": false
+    },
+    "walletPoints": 0,
+    "waiterSource": "direct",
+    "hiddenFromSelector": false,
+    "resetCodeAttempts": 0,
+    "selectorMode": "all",
+    "visibleWaiters": [],
+    "createdAt": "2026-08-30T08:30:27.640Z",
+    "updatedAt": "2026-08-30T08:30:27.640Z",
+    "__v": 0
+  }
+]

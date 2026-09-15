@@ -8,6 +8,8 @@ import EtimsConfig from "../models/EtimsConfig.js";
 import { getProviderAdapter } from "../utils/etimsProviders/index.js";
 import { EtimsConfigurationError } from "../utils/etimsErrors.js";
 import { reconcileEtimsSubmissions } from "../utils/etimsReconciliation.js";
+import PaymentConfig from "../models/PaymentConfig.js";
+
 
 // @desc    Read-only eTIMS reconciliation snapshot for ONE explicitly chosen
 //          business — never all businesses at once, and never a business
@@ -221,6 +223,84 @@ export const getPlatformOverview = async (req, res) => {
       Business.countDocuments({ subscriptionStatus: "trialing", _bypassTenantGuard: true }),
     ]);
     res.json({ totalBusinesses: total, active, suspended, trialing });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc    Read this business's M-Pesa config status — never credentials.
+// @route   GET /api/superadmin/businesses/:id/payment-config
+export const getBusinessPaymentConfig = async (req, res) => {
+  try {
+    const businessId = req.params.id;
+    const business = await Business.findById(businessId);
+    if (!business) return res.status(404).json({ message: "Business not found" });
+
+    const config =
+      (await PaymentConfig.findOne({ businessId, provider: "mpesa" })) || null;
+
+    res.json({ config });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc    Set/update a business's M-Pesa config on their behalf — the
+//          superadmin path for exactly this: a client hands you their
+//          Daraja app, you enter it here for them. businessId from the
+//          URL param, validated against Business first — same pattern as
+//          every other superadmin business-scoped write in this file.
+// @route   PATCH /api/superadmin/businesses/:id/payment-config
+export const configureBusinessPaymentConfig = async (req, res) => {
+  try {
+    const businessId = req.params.id;
+    const business = await Business.findById(businessId);
+    if (!business) return res.status(404).json({ message: "Business not found" });
+
+    const { shortcode, consumerKey, consumerSecret, passkey, environment, enabled } = req.body;
+
+    // PaymentConfig only supports "mpesa" today (see its schema enum) —
+    // no pluggable registry like eTIMS has, so this is a direct check
+    // rather than a registry lookup.
+    const provider = "mpesa";
+
+    if (environment && !["sandbox", "production"].includes(environment)) {
+      return res.status(400).json({ message: "environment must be 'sandbox' or 'production'" });
+    }
+
+    const config = await PaymentConfig.upsertForBusiness(businessId, provider, {
+      shortcode,
+      consumerKey,
+      consumerSecret,
+      passkey,
+      environment,
+      enabled,
+    });
+
+    res.json({ message: "M-Pesa configuration saved for business", config });
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ message: error.message });
+    }
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc    Read this business's eTIMS config status — never credentials.
+//          (configureBusinessEtims already exists for writing; this is
+//          its missing read counterpart, same as above for M-Pesa.)
+// @route   GET /api/superadmin/businesses/:id/etims-config
+export const getBusinessEtimsConfig = async (req, res) => {
+  try {
+    const businessId = req.params.id;
+    const business = await Business.findById(businessId);
+    if (!business) return res.status(404).json({ message: "Business not found" });
+
+    const config =
+      (await EtimsConfig.findOne({ businessId, enabled: true })) ||
+      (await EtimsConfig.findOne({ businessId }).sort({ updatedAt: -1 }));
+
+    res.json({ config: config || null });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
