@@ -15,15 +15,20 @@ export const getPaymentConfig = async (req, res) => {
 
 // @desc    Create/update this business's M-Pesa config
 // @route   PUT /api/payment-config/:provider
+// controllers/paymentConfigController.js
+
 export const setPaymentConfig = async (req, res) => {
   try {
     const { shortcode, shortcodeType, consumerKey, consumerSecret, passkey, environment, enabled } = req.body;
 
+    if (environment && !["sandbox", "production"].includes(environment)) {
+      return res.status(400).json({ message: "environment must be 'sandbox' or 'production'" });
+    }
     if (shortcodeType && !["till", "paybill"].includes(shortcodeType)) {
       return res.status(400).json({ message: "shortcodeType must be 'till' or 'paybill'" });
     }
 
-    const config = await PaymentConfig.upsertForBusiness(req.businessId, req.params.provider, {
+    const config = await PaymentConfig.upsertForBusiness(req.businessId, "mpesa", {
       shortcode,
       shortcodeType,
       consumerKey,
@@ -35,6 +40,9 @@ export const setPaymentConfig = async (req, res) => {
 
     res.json({ message: "Payment config saved", config });
   } catch (error) {
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
