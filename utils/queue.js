@@ -4,14 +4,18 @@
 // jobs here can fail, retry, and even survive a server restart, without
 // ever touching the underlying Order/Receipt.
 import Agenda from "agenda";
+import mongoose from "mongoose";
 
 export const agenda = new Agenda({
-  db: { address: process.env.MONGO_URI, collection: "jobs" },
   processEvery: "10 seconds",
   maxConcurrency: 10,
 });
 
 export async function startQueue() {
+  // Reuse the connection mongoose already authenticated successfully,
+  // instead of letting Agenda's own (differently-versioned) mongodb
+  // driver open a second, independent connection that fails auth.
+  agenda.mongo(mongoose.connection.db, "jobs");
   await agenda.start();
   console.log("🗂️  Job queue started");
 }
