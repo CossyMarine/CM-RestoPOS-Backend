@@ -20,6 +20,17 @@ const paymentConfigSchema = new mongoose.Schema(
 
     shortcode: { type: String, trim: true, required: true },
 
+    // Determines the Daraja TransactionType sent on every STK Push for this
+    // business. "till" = CustomerBuyGoodsOnline (Buy Goods shortcode).
+    // "paybill" = CustomerPayBillOnline (Paybill shortcode). These are not
+    // interchangeable — Daraja rejects the wrong one outright.
+    shortcodeType: {
+      type: String,
+      enum: ["till", "paybill"],
+      required: true,
+      default: "till",
+    },
+
     // Stored ENCRYPTED (iv.authTag.ciphertext). select: false keeps them out
     // of default query results and out of accidental console.log(doc) leaks —
     // callers must explicitly .select("+consumerKey") to touch the raw field,
@@ -35,18 +46,6 @@ const paymentConfigSchema = new mongoose.Schema(
     },
 
     enabled: { type: Boolean, default: false },
-    shortcode: { type: String, trim: true, required: true },
-
-// Determines the Daraja TransactionType sent on every STK Push for this
-// business. "till" = CustomerBuyGoodsOnline (Buy Goods shortcode).
-// "paybill" = CustomerPayBillOnline (Paybill shortcode). These are not
-// interchangeable — Daraja rejects the wrong one outright.
-shortcodeType: {
-  type: String,
-  enum: ["till", "paybill"],
-  required: true,
-  default: "till",
-},
   },
   { timestamps: true }
 );
@@ -88,6 +87,12 @@ paymentConfigSchema.methods.getDecryptedCredentials = function () {
 // Static — upsert with encryption applied on the way in. Controllers should
 // call this rather than constructing/saving a PaymentConfig by hand, so
 // nobody accidentally saves plaintext by skipping the encrypt step.
+//
+// runValidators + context: "query" makes Mongoose actually enforce the
+// schema (required fields, enums) on this findOneAndUpdate — without it,
+// findOneAndUpdate skips schema validation by default, and an incomplete
+// or malformed config (missing consumerKey, invalid shortcodeType, etc.)
+// would silently save instead of being rejected.
 paymentConfigSchema.statics.upsertForBusiness = async function (
   businessId,
   provider,
@@ -108,7 +113,7 @@ paymentConfigSchema.statics.upsertForBusiness = async function (
   return this.findOneAndUpdate(
     { businessId, provider },
     { $set: update },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+    { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true, context: "query" }
   );
 };
 
