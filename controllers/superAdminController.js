@@ -257,19 +257,20 @@ export const configureBusinessPaymentConfig = async (req, res) => {
     const business = await Business.findById(businessId);
     if (!business) return res.status(404).json({ message: "Business not found" });
 
-    const { shortcode, consumerKey, consumerSecret, passkey, environment, enabled } = req.body;
+    const { shortcode, shortcodeType, consumerKey, consumerSecret, passkey, environment, enabled } = req.body;
 
-    // PaymentConfig only supports "mpesa" today (see its schema enum) —
-    // no pluggable registry like eTIMS has, so this is a direct check
-    // rather than a registry lookup.
     const provider = "mpesa";
 
     if (environment && !["sandbox", "production"].includes(environment)) {
       return res.status(400).json({ message: "environment must be 'sandbox' or 'production'" });
     }
+    if (shortcodeType && !["till", "paybill"].includes(shortcodeType)) {
+      return res.status(400).json({ message: "shortcodeType must be 'till' or 'paybill'" });
+    }
 
     const config = await PaymentConfig.upsertForBusiness(businessId, provider, {
       shortcode,
+      shortcodeType,
       consumerKey,
       consumerSecret,
       passkey,
